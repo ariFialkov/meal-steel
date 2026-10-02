@@ -1,5 +1,7 @@
 # Meal Steel
 
+**Play it:** https://arifialkov.github.io/meal-steel/
+
 A 3D action betting game about suped-up food trucks. Pick a truck, place an entry bet, and square off against a lobby of simulated opponents in one of four modes. Runs in the browser on desktop and mobile and installs as a PWA.
 
 ## Modes
@@ -30,6 +32,10 @@ There is no networking. Opponents are bots whose driving is meant to look like p
 ## Trucks
 
 16 trucks, each with a food-themed special move: Bratzilla, Fryclone, Mac Attack, Burrito Bandito, Ramenator, Chili Con Carnage, Churricane, Hulk Hoagie, Cream Supreme, Supergyro, Pho King, Eggatron, Wraptor, General Tsonami, Chief Beef and Barmaggeddon. See `src/data/trucks.js`.
+
+## Deployment
+
+Every push to `main` or a `claude/**` branch runs `.github/workflows/pages.yml`, which builds the game and publishes `dist/` to the `gh-pages` branch, served by GitHub Pages at the URL above.
 
 ## Development
 
