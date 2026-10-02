@@ -1,0 +1,20 @@
+{
+  "name": "meal-steel",
+  "version": "0.1.0",
+  "description": "Meal Steel - a 3D action betting game with suped-up food trucks. Race, Rumble, Soccer and Musical Chairs against simulated opponents.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host",
+    "build": "node scripts/gen-icons.mjs && vite build",
+    "preview": "vite preview --host",
+    "icons": "node scripts/gen-icons.mjs"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "vite-plugin-pwa": "^0.20.5"
+  }
+}
