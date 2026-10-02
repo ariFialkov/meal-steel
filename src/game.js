@@ -110,7 +110,10 @@ export class Game {
     const p = this.player;
     if (this.autopilot) { /* mode.autopilot drives the player */ }
     else if (p.alive && !this.mode.finished) {
-      p.control.steer = input.steer; p.control.throttle = input.throttle; p.control.handbrake = input.handbrake;
+      // Input reports steer as driver-relative (+1 = right). Truck physics uses +steer = heading increase,
+      // which turns toward world +x, i.e. the driver's left as seen from the chase camera. Bots already use
+      // the physics convention, so only the player's input is converted here.
+      p.control.steer = -input.steer; p.control.throttle = input.throttle; p.control.handbrake = input.handbrake;
       p.control.turbo = input.turboPressed;
       if (input.specialPressed) this.specials.use(p, this.trucks, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s));
     } else { p.control.throttle = 0; p.control.steer = 0; p.control.turbo = false; }
