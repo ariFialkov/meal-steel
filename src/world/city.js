@@ -101,8 +101,9 @@ export function buildCity(scene, plan, nb, weather, rng, opts = {}) {
     // sidewalk / grass slab
     const slab = new THREE.BoxGeometry(w + 3, 0.25, d + 3); slab.translate(cx, 0.125, cz);
     flats.push(paint(slab, type === 'park' ? 0x5c9e4a : sidewalkColor, 0.03));
-    if (type === 'park') { buildPark(r, rng, props, flats); continue; }
-    buildBlockBuildings(r, rng, palette, tall, buildings, flats, world, nb);
+    if (type === 'park') { buildPark(r, rng, props, flats, !!plan.smallParks); continue; }
+    const lr = plan.lowRise, maxH = lr && i >= lr.i0 && i <= lr.i1 && j >= lr.j0 && j <= lr.j1 ? lr.maxH : Infinity;
+    buildBlockBuildings(r, rng, palette, tall, buildings, flats, world, maxH);
     buildSidewalkProps(r, rng, props);
   }
 
@@ -177,7 +178,7 @@ export function buildCity(scene, plan, nb, weather, rng, opts = {}) {
   return { group, world, props, materials: [bMat, flatMat], textures: [tex.diffuse, tex.emissive] };
 }
 
-function buildBlockBuildings(r, rng, palette, tall, buildings, flats, world) {
+function buildBlockBuildings(r, rng, palette, tall, buildings, flats, world, maxH = Infinity) {
   // split the block into lots
   const splits = (len, minLot) => {
     const n = rng.chance(0.5) ? 2 : 3; const pts = [0];
@@ -197,6 +198,7 @@ function buildBlockBuildings(r, rng, palette, tall, buildings, flats, world) {
     let h = (6 + Math.pow(rng.next(), 2.2) * 30) * tall;
     if (rng.chance(0.08)) h *= 1.8;
     h = Math.round(h / 3.6) * 3.6 + 0.4;
+    if (h > maxH) h = Math.max(4, Math.floor(maxH / 3.6) * 3.6 + 0.4);
     const color = rng.pick(palette);
     const style = rng.next();
     const base = 0.25;
@@ -245,7 +247,7 @@ function buildSidewalkProps(r, rng, props) {
   for (let z = r.z0 + 3; z < r.z1 - 2; z += rng.range(6, 9)) { place(r.x0 - edge, z, Math.PI / 2); place(r.x1 + edge, z + 2, -Math.PI / 2); }
 }
 
-function buildPark(r, rng, props, flats) {
+function buildPark(r, rng, props, flats, small = false) {
   const cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
   const pathA = new THREE.BoxGeometry(r.x1 - r.x0 + 3, 0.27, 3); pathA.translate(cx, 0.135, cz); flats.push(paint(pathA, 0xc9b79c));
   const pathB = new THREE.BoxGeometry(3, 0.27, r.z1 - r.z0 + 3); pathB.translate(cx, 0.135, cz); flats.push(paint(pathB, 0xc9b79c));
@@ -255,6 +257,7 @@ function buildPark(r, rng, props, flats) {
     if (Math.abs(x - cx) < 2.5 || Math.abs(z - cz) < 2.5) continue;
     props.add(rng.chance(0.75) ? 'tree' : 'bench', x, z, rng.range(0, Math.PI * 2), rng.range(0.9, 1.3));
   }
+  if (small) return;
   for (let k = 0; k < rng.int(1, 2); k++) {
     const x = rng.range(r.x0 + 6, r.x1 - 6), z = rng.range(r.z0 + 6, r.z1 - 6);
     if (Math.abs(x - cx) < 4 || Math.abs(z - cz) < 4) continue;

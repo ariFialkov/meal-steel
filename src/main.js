@@ -1,4 +1,7 @@
 // Meal Steel entry point: renderer, screens, bank, state machine.
+import '@fontsource/luckiest-guy';
+import '@fontsource/fredoka/500.css';
+import '@fontsource/fredoka/700.css';
 import * as THREE from 'three';
 import { RNG } from './core/rng.js';
 import { Input } from './core/input.js';
@@ -30,6 +33,8 @@ let game = null;
 let last = { def: null, modeId: null, bet: null };
 const pregameSignal = { cancel: null };
 
+const fadeEl = document.getElementById('fade');
+function flash(ms = 700) { fadeEl.style.transition = 'none'; fadeEl.style.opacity = '1'; requestAnimationFrame(() => requestAnimationFrame(() => { fadeEl.style.transition = `opacity ${ms}ms ease`; fadeEl.style.opacity = '0'; })); }
 const hud = new Hud(input, () => quitGame());
 const menu = new Menu(renderer, audio, { onPlay: (def, modeId, bet) => startMatch(def, modeId, bet) });
 menu.setBank(bank);
@@ -56,6 +61,7 @@ async function startMatch(def, modeId, bet) {
   const ok = await runPregame(params, outcome, bet, audio, def, pregameSignal);
   if (!ok || state !== 'pregame') return;
   state = 'game';
+  flash(800);
   game = new Game({
     renderer, input, audio, hud, params, outcome, playerDef: def,
     onFinish: (result) => finishMatch(result, params, outcome),
@@ -70,7 +76,7 @@ function finishMatch(result, params, outcome) {
   hud.hide();
   showResults(result, outcome, params, bank, {
     onAgain: () => { if (game) { game.dispose(); game = null; } startMatch(last.def, last.modeId, Math.min(last.bet, bank) >= 5 ? last.bet <= bank ? last.bet : 5 : 5); },
-    onMenu: () => { if (game) { game.dispose(); game = null; } state = 'menu'; menu.show(); },
+    onMenu: () => { if (game) { game.dispose(); game = null; } state = 'menu'; menu.show(); flash(600); },
   });
 }
 
@@ -78,7 +84,7 @@ function quitGame() {
   if (state !== 'game') return;
   // quitting forfeits the entry bet
   if (game) { game.dispose(); game = null; }
-  input.enabled = false; state = 'menu'; menu.show();
+  input.enabled = false; state = 'menu'; menu.show(); flash(600);
 }
 
 // a broke player gets a free refill so the game stays playable

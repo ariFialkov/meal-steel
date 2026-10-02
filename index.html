@@ -16,11 +16,12 @@
 <body>
   <div id="app">
     <canvas id="gl"></canvas>
+    <div id="fade"></div>
 
     <!-- MAIN MENU -->
     <section id="menu" class="screen">
       <header class="menu-top">
-        <h1 class="logo"><span>MEAL</span><span>STEEL</span></h1>
+        <h1 class="logo"><span class="l1">MEAL</span><span class="l2">STEEL</span><em class="logo-tag">FOOD TRUCK MAYHEM</em></h1>
         <div class="bank-pill" id="bankPill"><span class="coin" data-icon="coin"></span><span id="bankValue">1000</span></div>
       </header>
 
@@ -32,14 +33,14 @@
         <div class="truck-food" id="truckFood">brats &amp; hot dogs</div>
       </div>
       <div class="truck-stats" id="truckStats"></div>
-      <div class="truck-special"><span class="sp-ico" id="specialIconMenu"></span><b id="specialName">Sausage Whip</b><span id="specialDesc"></span></div>
+      <div class="truck-special"><div class="sticker-hdr">SPECIAL MOVE</div><span class="sp-ico" id="specialIconMenu"></span><b id="specialName">Sausage Whip</b><span id="specialDesc"></span></div>
 
       <footer class="menu-bottom">
         <div class="modes" id="modes">
-          <button class="mode" data-mode="race"><i data-icon="flag"></i><b>Race</b><small>4–8 trucks · podium payout</small></button>
-          <button class="mode" data-mode="rumble"><i data-icon="burst"></i><b>Rumble</b><small>12 trucks · most points wins</small></button>
-          <button class="mode" data-mode="soccer"><i data-icon="ball"></i><b>Soccer</b><small>3v3 · 4v4 · 5v5 futsal</small></button>
-          <button class="mode" data-mode="chairs"><i data-icon="note"></i><b>Musical Chairs</b><small>16 trucks · last one parked</small></button>
+          <button class="mode" data-mode="race"><i data-icon="flag"></i><b>RACE</b><small>4–8 trucks · podium payout</small></button>
+          <button class="mode" data-mode="rumble"><i data-icon="burst"></i><b>RUMBLE</b><small>12 trucks · most points wins</small></button>
+          <button class="mode" data-mode="soccer"><i data-icon="ball"></i><b>SOCCER</b><small>3v3 · 4v4 · 5v5 futsal</small></button>
+          <button class="mode" data-mode="chairs"><i data-icon="note"></i><b>MUSICAL CHAIRS</b><small>16 trucks · last one parked</small></button>
         </div>
         <div class="bet-row">
           <span class="bet-label">ENTRY BET</span>
@@ -61,12 +62,12 @@
     <!-- HUD -->
     <section id="hud" class="screen hidden">
       <div class="hud-top">
-        <div class="board" id="board"></div>
+        <div class="board-wrap"><div class="sticker-hdr red">STANDINGS</div><div class="board" id="board"></div></div>
         <div class="center-info">
           <div class="timer" id="timer"></div>
           <div class="sub-info" id="subInfo"></div>
         </div>
-        <canvas id="minimap" width="200" height="200"></canvas>
+        <div class="map-wrap"><div class="sticker-hdr blue">MAP</div><canvas id="minimap" width="200" height="200"></canvas></div>
       </div>
       <div class="announce" id="announce"></div>
       <div class="toast-stack" id="toasts"></div>
@@ -88,7 +89,7 @@
 
     <!-- RESULTS -->
     <section id="results" class="screen hidden">
-      <div class="results-card">
+      <div class="results-card"><div class="res-rays"></div>
         <div class="res-trophy" id="resTrophy"></div><div class="res-title" id="resTitle">FINISHED</div>
         <div class="res-place" id="resPlace">1st</div>
         <div class="res-prize" id="resPrize">+$0</div>

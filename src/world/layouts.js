@@ -14,6 +14,16 @@ function emptyPlan(cols, rows) {
     minX: (-cols / 2) * PITCH, maxX: (cols / 2) * PITCH, minZ: (-rows / 2) * PITCH, maxZ: (rows / 2) * PITCH };
 }
 
+/** Small neighbourhood for the main menu backdrop: the hero truck sits at the central intersection. */
+export function makeMenuPlan(rng) {
+  const plan = emptyPlan(4, 4);
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) if (rng.chance(0.15)) plan.blocks[j][i] = 'park';
+  // the four blocks around the central intersection are parks (small trees only) so the orbiting camera never clips a building
+  for (let j = 1; j <= 2; j++) for (let i = 1; i <= 2; i++) plan.blocks[j][i] = 'park';
+  plan.smallParks = true;
+  return plan;
+}
+
 export function makePlan(modeId, params, rng) {
   if (modeId === 'race') {
     const plan = emptyPlan(8, 8);
