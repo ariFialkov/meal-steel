@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#ff6a2a" />
+  <meta name="theme-color" content="#4db6f5" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -21,25 +21,25 @@
     <section id="menu" class="screen">
       <header class="menu-top">
         <h1 class="logo"><span>MEAL</span><span>STEEL</span></h1>
-        <div class="bank-pill" id="bankPill"><span class="coin">$</span><span id="bankValue">1000</span></div>
+        <div class="bank-pill" id="bankPill"><span class="coin" data-icon="coin"></span><span id="bankValue">1000</span></div>
       </header>
 
-      <button class="arrow left" id="prevTruck" aria-label="Previous truck">&#9664;</button>
-      <button class="arrow right" id="nextTruck" aria-label="Next truck">&#9654;</button>
+      <button class="arrow left" id="prevTruck" aria-label="Previous truck" data-icon="arrowLeft"></button>
+      <button class="arrow right" id="nextTruck" aria-label="Next truck" data-icon="arrowRight"></button>
 
       <div class="truck-card" id="truckCard">
         <div class="truck-name" id="truckName">Bratzilla</div>
         <div class="truck-food" id="truckFood">brats &amp; hot dogs</div>
-        <div class="truck-stats" id="truckStats"></div>
-        <div class="truck-special"><b id="specialName">Sausage Whip</b><span id="specialDesc"></span></div>
       </div>
+      <div class="truck-stats" id="truckStats"></div>
+      <div class="truck-special"><span class="sp-ico" id="specialIconMenu"></span><b id="specialName">Sausage Whip</b><span id="specialDesc"></span></div>
 
       <footer class="menu-bottom">
         <div class="modes" id="modes">
-          <button class="mode" data-mode="race"><i>🏁</i><b>Race</b><small>4–8 trucks · podium payout</small></button>
-          <button class="mode" data-mode="rumble"><i>💥</i><b>Rumble</b><small>12 trucks · most points wins</small></button>
-          <button class="mode" data-mode="soccer"><i>⚽</i><b>Soccer</b><small>3v3 · 4v4 · 5v5 futsal</small></button>
-          <button class="mode" data-mode="chairs"><i>🎵</i><b>Musical Chairs</b><small>16 trucks · last one parked</small></button>
+          <button class="mode" data-mode="race"><i data-icon="flag"></i><b>Race</b><small>4–8 trucks · podium payout</small></button>
+          <button class="mode" data-mode="rumble"><i data-icon="burst"></i><b>Rumble</b><small>12 trucks · most points wins</small></button>
+          <button class="mode" data-mode="soccer"><i data-icon="ball"></i><b>Soccer</b><small>3v3 · 4v4 · 5v5 futsal</small></button>
+          <button class="mode" data-mode="chairs"><i data-icon="note"></i><b>Musical Chairs</b><small>16 trucks · last one parked</small></button>
         </div>
         <div class="bet-row">
           <span class="bet-label">ENTRY BET</span>
@@ -78,18 +78,18 @@
           <div class="speed" id="speed">0</div>
         </div>
         <div class="actions">
-          <button class="act" id="btnTurbo"><span>🔥</span><small>TURBO</small></button>
-          <button class="act" id="btnSpecial"><span id="specialIcon">⭐</span><small>SPECIAL</small></button>
-          <button class="act small-act" id="btnBrake"><span>⏬</span><small>REV</small></button>
+          <button class="act" id="btnTurbo"><span data-icon="flame"></span><small>TURBO</small></button>
+          <button class="act" id="btnSpecial"><span id="specialIcon"></span><small>SPECIAL</small></button>
+          <button class="act small-act" id="btnBrake"><span data-icon="reverse"></span><small>REV</small></button>
         </div>
       </div>
-      <button class="quit" id="quitBtn">✕</button>
+      <button class="quit" id="quitBtn" data-icon="close"></button>
     </section>
 
     <!-- RESULTS -->
     <section id="results" class="screen hidden">
       <div class="results-card">
-        <div class="res-title" id="resTitle">FINISHED</div>
+        <div class="res-trophy" id="resTrophy"></div><div class="res-title" id="resTitle">FINISHED</div>
         <div class="res-place" id="resPlace">1st</div>
         <div class="res-prize" id="resPrize">+$0</div>
         <div class="res-board" id="resBoard"></div>
@@ -101,7 +101,7 @@
       </div>
     </section>
 
-    <div id="rotate" class="hidden"><div>↻<br/>Rotate your device to landscape</div></div>
+    <div id="rotate" class="hidden"><div><span data-icon="rotate"></span><br/>Rotate your device to landscape</div></div>
   </div>
   <script type="module" src="./src/main.js"></script>
 </body>

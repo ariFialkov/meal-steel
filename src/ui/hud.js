@@ -1,4 +1,5 @@
 // In-game HUD: leaderboard, timer, minimap, gauges, announcements, touch controls.
+import { icon, mountIcons } from './icons.js';
 export class Hud {
   constructor(input, onQuit) {
     const $ = (id) => document.getElementById(id);
@@ -7,6 +8,7 @@ export class Hud {
     this.turboBar = $('turboBar'); this.specialBar = $('specialBar'); this.speed = $('speed'); this.specialLabel = $('specialLabel'); this.specialIcon = $('specialIcon');
     this.announceEl = $('announce'); this.toasts = $('toasts');
     this.btnTurbo = $('btnTurbo'); this.btnSpecial = $('btnSpecial');
+    mountIcons(this.el);
     input.bindTouch($('joystick'), $('stick'), this.btnTurbo, this.btnSpecial, $('btnBrake'));
     $('quitBtn').addEventListener('click', () => onQuit());
     this.boardT = 0; this.mapT = 0; this.announceTimer = null;
@@ -14,7 +16,7 @@ export class Hud {
   }
   show(game) {
     this.el.classList.remove('hidden'); this.toasts.innerHTML = ''; this.announceEl.className = 'announce';
-    this.specialLabel.textContent = game.player.def.special.name.toUpperCase(); this.specialIcon.textContent = game.player.def.special.icon;
+    this.specialLabel.textContent = game.player.def.special.name.toUpperCase(); this.specialIcon.innerHTML = icon(game.player.def.special.icon);
     this.boardT = 1; this.mapT = 1;
   }
   hide() { this.el.classList.add('hidden'); this.announceEl.className = 'announce'; }
@@ -41,7 +43,7 @@ export class Hud {
     this.btnTurbo.classList.toggle('cooling', p.turboCd > 0); this.btnSpecial.classList.toggle('cooling', p.spCd > 0);
     this.speed.textContent = Math.round(p.speed * 3.6);
     this.boardT += dt; this.mapT += dt;
-    if (this.boardT > 0.2) { this.boardT = 0; const h = game.mode.hud(); if (h) { this.renderBoard(h.rows); this.timer.textContent = h.timer ?? ''; this.sub.textContent = h.sub ?? ''; } }
+    if (this.boardT > 0.2) { this.boardT = 0; const h = game.mode.hud(); if (h) { this.renderBoard(h.rows); this.timer.innerHTML = h.timer ?? ''; this.sub.textContent = h.sub ?? ''; } }
     if (this.mapT > 0.08) { this.mapT = 0; this.ctx.clearRect(0, 0, 200, 200); game.mode.drawMinimap(this.ctx, 200); }
   }
   renderBoard(rows) {

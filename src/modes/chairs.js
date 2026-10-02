@@ -4,6 +4,7 @@ import { Mode } from './base.js';
 import { scatterOpenProps } from '../world/city.js';
 import { BotDriver } from '../ai/bot.js';
 import { clamp, noise1 } from '../core/math.js';
+import { icon } from '../ui/icons.js';
 
 export class ChairsMode extends Mode {
   setup() {
@@ -213,7 +214,7 @@ export class ChairsMode extends Mode {
     const alive = this.alive();
     const rows = this.trucks.slice().sort((a, b) => (b.alive - a.alive) || ((b.secured ? 1 : 0) - (a.secured ? 1 : 0))).map((tr, i) => ({ name: tr.name, color: this.colorOf(tr), you: tr.isPlayer, score: tr.alive ? (tr.secured ? '✓' : (tr.spot ? Math.round(tr.progress * 100) + '%' : '')) : 'OUT', pos: i + 1, out: !tr.alive }));
     const secured = this.spots.filter((s) => s.securedBy).length;
-    const timer = this.phase === 'music' ? '🎵 DRIVE' : this.phase === 'park' ? 'PARK!' : `ROUND ${this.round + 1}`;
+    const timer = this.phase === 'music' ? icon('note', 'ico-inline') + ' DRIVE' : this.phase === 'park' ? 'PARK!' : `ROUND ${this.round + 1}`;
     return { rows: rows.slice(0, 10), timer, sub: `Round ${this.round + 1}/${this.schedule.length} · ${alive.length} trucks · ${secured}/${this.spots.length} spots` };
   }
   drawMinimap(ctx, size) {

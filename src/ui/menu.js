@@ -4,6 +4,7 @@ import { TRUCKS } from '../data/trucks.js';
 import { MODES, BETS } from '../data/modes.js';
 import { buildTruckMesh } from '../vehicles/truck.js';
 import { fmtMoney } from '../core/math.js';
+import { icon, mountIcons } from './icons.js';
 
 export class Menu {
   constructor(renderer, audio, { onPlay }) {
@@ -13,23 +14,21 @@ export class Menu {
     this.modeId = localStorage.getItem('ms.mode') || 'race';
     this.bet = parseInt(localStorage.getItem('ms.bet') || '10', 10);
     this.bank = 0;
-    // scene
-    this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x2a1f4d);
-    this.scene.fog = new THREE.Fog(0x2a1f4d, 30, 80);
-    const aspect = 1; const d = 9;
-    this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 200);
-    this.camera.position.set(20, 16.3, 20); this.camera.lookAt(0, 1.5, 0);
-    this.scene.add(new THREE.HemisphereLight(0xffe9c9, 0x3a2a66, 0.9));
-    const sun = new THREE.DirectionalLight(0xfff2d0, 1.3); sun.position.set(12, 20, 8); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.4;
-    const sc = sun.shadow.camera; sc.left = sc.bottom = -12; sc.right = sc.top = 12; this.scene.add(sun);
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(7, 7.5, 0.6, 40), new THREE.MeshLambertMaterial({ color: 0x3a2a66 })); disc.position.y = -0.3; disc.receiveShadow = true; this.scene.add(disc);
-    const stripe = new THREE.Mesh(new THREE.CylinderGeometry(7.6, 7.6, 0.25, 40), new THREE.MeshLambertMaterial({ color: 0xff6a2a })); stripe.position.y = -0.6; this.scene.add(stripe);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshLambertMaterial({ color: 0x241a44 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; this.scene.add(floor);
-    // some backdrop blocks
-    for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2, r = 22 + (i % 3) * 6, h = 4 + (i * 7) % 11; const b = new THREE.Mesh(new THREE.BoxGeometry(5, h, 5), new THREE.MeshLambertMaterial({ color: [0x3a2a66, 0x4a3a7a, 0x2f2458][i % 3] })); b.position.set(Math.cos(a) * r, h / 2 - 0.7, Math.sin(a) * r); this.scene.add(b); }
-    this.truckMesh = null; this.spin = 0;
+    // scene: just the truck on an invisible shadow-catcher, over the page's sky gradient
+    this.scene = new THREE.Scene(); this.scene.background = null;
+    const d = 5.6;
+    this.camera = new THREE.OrthographicCamera(-d, d, d, -d, 0.1, 200);
+    this.camera.position.set(24, 19.6, 24); this.camera.lookAt(0, 2.4, 0);
+    this.scene.add(new THREE.HemisphereLight(0xdff3ff, 0x6a8fb5, 1.1));
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const sun = new THREE.DirectionalLight(0xfff4dc, 1.6); sun.position.set(10, 22, 6); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.4;
+    const sc = sun.shadow.camera; sc.left = sc.bottom = -10; sc.right = sc.top = 10; this.scene.add(sun);
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(12, 48), new THREE.ShadowMaterial({ opacity: 0.22 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
+    this.truckMesh = null; this.spin = 0.6;
     // DOM
     const $ = (id) => document.getElementById(id);
+    mountIcons(this.el);
     $('prevTruck').addEventListener('click', () => { this.setTruck(this.truckIdx - 1); this.audio.tick(); });
     $('nextTruck').addEventListener('click', () => { this.setTruck(this.truckIdx + 1); this.audio.tick(); });
     window.addEventListener('keydown', (e) => { if (this.el.classList.contains('hidden')) return; if (e.code === 'ArrowLeft') this.setTruck(this.truckIdx - 1); if (e.code === 'ArrowRight') this.setTruck(this.truckIdx + 1); if (e.code === 'Enter') this.play(); });
@@ -51,7 +50,7 @@ export class Menu {
     const t = this.truck, $ = (id) => document.getElementById(id);
     $('truckName').textContent = t.name; $('truckFood').textContent = t.food;
     $('truckStats').innerHTML = ['speed', 'accel', 'handling', 'weight'].map((k) => `<div class="stat">${k.toUpperCase()}<div class="pips">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= t.stats[k] ? 'on' : ''}"></i>`).join('')}</div></div>`).join('');
-    $('specialName').textContent = `${t.special.icon} ${t.special.name}`; $('specialDesc').textContent = t.special.desc;
+    $('specialIconMenu').innerHTML = icon(t.special.icon); $('specialName').textContent = t.special.name; $('specialDesc').textContent = t.special.desc;
     for (const b of document.querySelectorAll('#modes .mode')) b.classList.toggle('selected', b.dataset.mode === this.modeId);
     for (const b of document.querySelectorAll('#bets button')) { const v = parseInt(b.dataset.bet, 10); b.classList.toggle('selected', v === this.bet); b.disabled = v > this.bank; }
     if (this.bet > this.bank) { const ok = BETS.filter((v) => v <= this.bank); if (ok.length) this.bet = ok[ok.length - 1]; }
@@ -63,7 +62,7 @@ export class Menu {
   play() { if (this.bank < this.bet) return; this.audio.lock(); this.onPlay(this.truck, this.modeId, this.bet); }
   show() { this.el.classList.remove('hidden'); this.refresh(); }
   hide() { this.el.classList.add('hidden'); }
-  resize(w, h) { const d = Math.max(9, 9 * (h / w) * 1.2); const a = w / h; this.camera.left = -d * a; this.camera.right = d * a; this.camera.top = d; this.camera.bottom = -d; this.camera.updateProjectionMatrix(); }
-  update(dt) { this.spin += dt * 0.5; if (this.truckMesh) { this.truckMesh.rotation.y = this.spin; this.truckMesh.position.y = Math.sin(this.spin * 2) * 0.05; } }
+  resize(w, h) { const d = h < 480 ? 6.4 : 6.0; const a = w / h; this.camera.left = -d * a; this.camera.right = d * a; this.camera.top = d; this.camera.bottom = -d; this.camera.updateProjectionMatrix(); }
+  update(dt) { this.spin += dt * 0.35; if (this.truckMesh) { this.truckMesh.rotation.y = this.spin; this.truckMesh.position.y = Math.sin(this.spin * 2) * 0.04; } }
   render() { this.renderer.render(this.scene, this.camera); }
 }

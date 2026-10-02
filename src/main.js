@@ -12,7 +12,8 @@ import { Game } from './game.js';
 
 const canvas = document.getElementById('gl');
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPreference: 'high-performance', alpha: true });
+renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;

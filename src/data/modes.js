@@ -1,6 +1,6 @@
 export const MODES = {
   race: {
-    id: 'race', name: 'Race', icon: '🏁',
+    id: 'race', name: 'Race', icon: 'flag',
     players: { min: 4, max: 8 },
     time: null,
     winners: [[0.7, 0.2, 0.1], [0.5, 0.35, 0.15], [0.65, 0.25, 0.1], [0.85, 0.1, 0.05]],
@@ -8,7 +8,7 @@ export const MODES = {
     blurb: 'Full-contact Grand Prix through the neighbourhood.',
   },
   rumble: {
-    id: 'rumble', name: 'Rumble', icon: '💥',
+    id: 'rumble', name: 'Rumble', icon: 'burst',
     players: { fixed: 12 },
     time: { options: [30, 90, 180] },
     winners: [[1]],
@@ -16,7 +16,7 @@ export const MODES = {
     blurb: 'Smash, serve and survive. Most points when the clock hits zero wins.',
   },
   soccer: {
-    id: 'soccer', name: 'Soccer', icon: '⚽',
+    id: 'soccer', name: 'Soccer', icon: 'ball',
     players: { options: [6, 8, 10] },
     time: { fixed: 150 },
     winners: [[1]],
@@ -24,7 +24,7 @@ export const MODES = {
     blurb: 'Futsal with food trucks. Whole winning team splits the pot.',
   },
   chairs: {
-    id: 'chairs', name: 'Musical Chairs', icon: '🎵',
+    id: 'chairs', name: 'Musical Chairs', icon: 'note',
     players: { fixed: 16 },
     time: null,
     winners: [[1]],

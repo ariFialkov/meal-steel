@@ -2,6 +2,7 @@
 import { TRUCKS } from '../data/trucks.js';
 import { MODES, NEIGHBOURHOODS, WEATHERS } from '../data/modes.js';
 import { fmtMoney } from '../core/math.js';
+import { icon } from './icons.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const payoutStr = (w) => w.map((v) => Math.round(v * 100)).join(' / ') + '%';
@@ -16,7 +17,7 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal)
   slots[0].classList.add('filled', 'you'); slots[0].style.background = '#' + playerDef.body.toString(16).padStart(6, '0');
   // reels
   const reels = [
-    { label: 'MODE', pool: Object.values(MODES).map((m) => m.icon + ' ' + m.name), final: mode.icon + ' ' + mode.name },
+    { label: 'MODE', pool: Object.values(MODES).map((m) => icon(m.icon, 'ico-inline') + ' ' + m.name), final: icon(mode.icon, 'ico-inline') + ' ' + mode.name },
     { label: 'NEIGHBOURHOOD', pool: NEIGHBOURHOODS.map((n) => n.name), final: params.neighbourhood.name },
     { label: 'WEATHER', pool: WEATHERS.map((w) => w.name), final: params.weather.name },
     { label: 'PLAYERS', pool: ['4', '6', '8', '10', '12', '16'], final: String(params.players) + (mode.teams ? ` (${params.players / 2}v${params.players / 2})` : '') },
@@ -30,7 +31,7 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal)
     roller.appendChild(d); return d;
   });
   const spinning = reels.map(() => true);
-  const tick = (i) => { const r = reels[i]; const v = reelEls[i].querySelector('.val'); v.textContent = r.pool[Math.floor(Math.random() * r.pool.length)]; };
+  const tick = (i) => { const r = reels[i]; const v = reelEls[i].querySelector('.val'); v.innerHTML = r.pool[Math.floor(Math.random() * r.pool.length)]; };
   let alive = true; signal.cancel = () => { alive = false; };
   const spinner = setInterval(() => { for (let i = 0; i < reels.length; i++) if (spinning[i]) tick(i); audio.tick(); }, 70);
   // lobby fill
@@ -40,7 +41,7 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal)
   // lock reels one by one
   for (let i = 0; i < reels.length && alive; i++) {
     await sleep(i === 0 ? 900 : 650);
-    spinning[i] = false; reelEls[i].querySelector('.val').textContent = reels[i].final; reelEls[i].classList.add('locked'); audio.lock();
+    spinning[i] = false; reelEls[i].querySelector('.val').innerHTML = reels[i].final; reelEls[i].classList.add('locked'); audio.lock();
   }
   clearInterval(spinner);
   await fillP;

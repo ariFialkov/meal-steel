@@ -1,9 +1,11 @@
 import { fmtMoney, ordinal } from '../core/math.js';
+import { icon } from './icons.js';
 
 export function showResults(result, outcome, params, bank, { onAgain, onMenu }) {
   const $ = (id) => document.getElementById(id);
   const el = $('results'); el.classList.remove('hidden');
   const won = outcome.prize > 0;
+  $('resTrophy').innerHTML = icon(won ? 'trophy' : 'burst');
   $('resTitle').textContent = params.mode === 'soccer' ? (won ? 'VICTORY' : 'DEFEAT') : 'FINAL STANDINGS';
   $('resPlace').textContent = params.mode === 'soccer' ? (won ? 'WIN' : 'LOSS') : ordinal(result.place);
   const prize = $('resPrize'); prize.textContent = won ? `+${fmtMoney(outcome.prize)}` : `-${fmtMoney(outcome.pot / params.players)}`; prize.className = 'res-prize' + (won ? '' : ' lost');
