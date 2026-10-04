@@ -1,0 +1,5 @@
+{
+  "_comment": "Per-truck import settings for scripts/import-trucks.mjs. yaw (degrees) rotates the source model so its front faces +Z.",
+  "defaults": { "yaw": 90, "length": 5.6, "maxWidth": 2.9, "baseSize": 1024, "normalSize": 1024, "mrSize": 512 },
+  "trucks": {}
+}

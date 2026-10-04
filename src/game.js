@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { RNG } from './core/rng.js';
 import { clamp, damp } from './core/math.js';
-import { TRUCKS } from './data/trucks.js';
+import { TRUCKS, TRUCK_BY_ID } from './data/trucks.js';
 import { makePlan } from './world/layouts.js';
 import { buildCity } from './world/city.js';
 import { generateTrack } from './world/track.js';
@@ -18,7 +18,8 @@ const MODE_CLASSES = { race: RaceMode, rumble: RumbleMode, soccer: SoccerMode, c
 const STEP = 1 / 60;
 
 export class Game {
-  constructor({ renderer, input, audio, hud, params, outcome, playerDef, onFinish, onQuit }) {
+  constructor({ renderer, input, audio, hud, params, outcome, playerDef, onFinish, onQuit, envMap }) {
+    this.envMap = envMap;
     this.renderer = renderer; this.input = input; this.audio = audio; this.hud = hud;
     this.params = params; this.outcome = outcome; this.playerDef = playerDef; this.onFinish = onFinish; this.onQuit = onQuit;
     this.rng = new RNG(params.seed);
@@ -35,6 +36,7 @@ export class Game {
     const w = params.weather, nb = params.neighbourhood;
     scene.background = new THREE.Color(w.sky);
     scene.fog = new THREE.Fog(w.fog, w.fogNear, w.fogFar);
+    if (this.envMap) { scene.environment = this.envMap; scene.environmentIntensity = w.night ? 0.25 : 0.6; }
     this.hemi = new THREE.HemisphereLight(w.hemi[0], w.hemi[1], w.ambient * 2.0); scene.add(this.hemi);
     this.amb = new THREE.AmbientLight(0xffffff, w.ambient * 0.5); scene.add(this.amb);
     this.sun = new THREE.DirectionalLight(w.sunColor, w.sun); this.sun.position.set(60, 90, 40);
@@ -53,7 +55,7 @@ export class Game {
     this.specials = new Specials(scene, this.fx, this.audio, rng);
 
     // trucks
-    const bots = rng.shuffle(TRUCKS.filter((t) => t.id !== this.playerDef.id)).slice(0, params.players - 1);
+    const bots = params.lineup ? params.lineup.map((id) => TRUCK_BY_ID[id]) : rng.shuffle(TRUCKS.filter((t) => t.id !== this.playerDef.id)).slice(0, params.players - 1);
     this.player = new Truck(this.playerDef, { isPlayer: true });
     this.bots = bots.map((d) => new Truck(d));
     this.trucks = [this.player, ...this.bots];
@@ -233,7 +235,7 @@ export class Game {
   dispose() {
     this.audio.stopEngine(); this.audio.stopMusic();
     this.hud.hide();
-    this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) { m.map?.dispose?.(); m.emissiveMap?.dispose?.(); m.dispose(); } } });
+    this.scene.traverse((o) => { if (o.userData.shared) return; if (o.geometry) o.geometry.dispose(); if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) { m.map?.dispose?.(); m.emissiveMap?.dispose?.(); m.dispose(); } } });
     this.scene.clear();
   }
 }

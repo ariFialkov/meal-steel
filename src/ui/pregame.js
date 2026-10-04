@@ -1,5 +1,5 @@
 // Slot-style pre-game roller: lobby fills with "players", reels spin and lock one by one.
-import { TRUCKS } from '../data/trucks.js';
+import { TRUCKS, TRUCK_BY_ID } from '../data/trucks.js';
 import { MODES, NEIGHBOURHOODS, WEATHERS } from '../data/modes.js';
 import { fmtMoney } from '../core/math.js';
 import { icon } from './icons.js';
@@ -7,11 +7,12 @@ import { icon } from './icons.js';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const payoutStr = (w) => w.map((v) => Math.round(v * 100)).join(' / ') + '%';
 
-export async function runPregame(params, outcome, bet, audio, playerDef, signal) {
+export async function runPregame(params, outcome, bet, audio, playerDef, signal, modelsReady = Promise.resolve()) {
   const el = document.getElementById('pregame'), lobby = document.getElementById('lobby'), roller = document.getElementById('roller'), foot = document.getElementById('rollerFoot');
   el.classList.remove('hidden'); lobby.innerHTML = ''; roller.innerHTML = ''; foot.textContent = 'FILLING LOBBY…';
   const mode = MODES[params.mode];
-  const colors = TRUCKS.filter((t) => t.id !== playerDef.id).map((t) => '#' + t.body.toString(16).padStart(6, '0'));
+  const lineup = params.lineup ? params.lineup.map((id) => TRUCK_BY_ID[id]) : TRUCKS.filter((t) => t.id !== playerDef.id);
+  const colors = lineup.map((t) => '#' + t.body.toString(16).padStart(6, '0'));
   const slots = [];
   for (let i = 0; i < params.players; i++) { const s = document.createElement('div'); s.className = 'slot'; lobby.appendChild(s); slots.push(s); }
   slots[0].classList.add('filled', 'you'); slots[0].style.background = '#' + playerDef.body.toString(16).padStart(6, '0');
@@ -20,7 +21,7 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal)
     { label: 'MODE', pool: Object.values(MODES).map((m) => icon(m.icon, 'ico-inline') + ' ' + m.name), final: icon(mode.icon, 'ico-inline') + ' ' + mode.name },
     { label: 'NEIGHBOURHOOD', pool: NEIGHBOURHOODS.map((n) => n.name), final: params.neighbourhood.name },
     { label: 'WEATHER', pool: WEATHERS.map((w) => w.name), final: params.weather.name },
-    { label: 'PLAYERS', pool: ['4', '6', '8', '10', '12', '16'], final: String(params.players) + (mode.teams ? ` (${params.players / 2}v${params.players / 2})` : '') },
+    { label: 'PLAYERS', pool: ['4', '6', '8', '10', '12', '14'], final: String(params.players) + (mode.teams ? ` (${params.players / 2}v${params.players / 2})` : '') },
   ];
   if (params.time) reels.push({ label: 'TIME', pool: ['30s', '90s', '150s', '180s'], final: params.time + 's' });
   if (params.mode === 'chairs') reels.push({ label: 'ROUNDS', pool: ['4', '5'], final: String(params.rounds) });
@@ -48,6 +49,9 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal)
   if (!alive) { el.classList.add('hidden'); return false; }
   foot.textContent = `LOBBY FULL · ${mode.blurb}`;
   await sleep(1300);
+  let loaded = false; modelsReady.then(() => { loaded = true; });
+  await sleep(0);
+  if (!loaded) { foot.textContent = 'WARMING UP THE ENGINES…'; await modelsReady; }
   el.classList.add('hidden');
   return alive;
 }

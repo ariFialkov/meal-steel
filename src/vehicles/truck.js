@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { clamp, wrapAngle, damp } from '../core/math.js';
 import { obbVsObb } from '../world/colliders.js';
+import { getTruckModel } from './models.js';
 
 const labelCache = new Map();
 function makeLabel(def) {
@@ -48,9 +49,8 @@ function buildTopper(kind, def) {
   return g;
 }
 
-export function buildTruckMesh(def) {
-  const root = new THREE.Group();
-  const body = new THREE.Group(); root.add(body);
+/** Blocky fallback truck for trucks without a model. Adds parts to body/root and returns the wheels. */
+function buildProceduralBody(def, body, root) {
   // chassis + body box + cab
   body.add(box(2.4, 0.5, 5.4, def.trim, 0, 0.75, 0));
   const cargo = box(2.5, 2.0, 3.6, def.body, 0, 2.0, -0.7); body.add(cargo);
@@ -79,6 +79,16 @@ export function buildTruckMesh(def) {
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.52, 8), hmat); hub.rotation.z = Math.PI / 2; w.add(hub);
     root.add(w); wheels.push(w);
   }
+  return wheels;
+}
+
+export function buildTruckMesh(def) {
+  const root = new THREE.Group();
+  const body = new THREE.Group(); root.add(body);
+  const model = getTruckModel(def.id);
+  let wheels = [];
+  if (model) body.add(model);
+  else wheels = buildProceduralBody(def, body, root);
   // status visuals
   const ice = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.8, 6.2), new THREE.MeshLambertMaterial({ color: 0x9ad4ff, transparent: true, opacity: 0.55 })); ice.position.y = 1.9; ice.visible = false; root.add(ice);
   const net = new THREE.Mesh(new THREE.SphereGeometry(3.6, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe9a8, wireframe: true })); net.position.y = 1.8; net.visible = false; root.add(net);
@@ -276,7 +286,7 @@ export class Truck {
     ud.body.rotation.set(this.pitch, this.fx.ram > 0 ? (t * 14) % (Math.PI * 2) : 0, this.roll);
     this.wheelSpin += this.fwdSpeed * dt / 0.55;
     this.steerVis = damp(this.steerVis, this.control.steer * 0.45, 10, dt);
-    for (let i = 0; i < 4; i++) { const w = ud.wheels[i]; w.rotation.y = i < 2 ? this.steerVis : 0; w.children[0].rotation.x = this.wheelSpin; w.children[1].rotation.x = this.wheelSpin; }
+    for (let i = 0; i < ud.wheels.length; i++) { const w = ud.wheels[i]; w.rotation.y = i < 2 ? this.steerVis : 0; w.children[0].rotation.x = this.wheelSpin; w.children[1].rotation.x = this.wheelSpin; }
     ud.ice.visible = this.fx.freeze > 0; ud.net.visible = this.fx.snare > 0; ud.shield.visible = this.fx.ram > 0;
     if (ud.net.visible) ud.net.rotation.y = t * 2;
   }

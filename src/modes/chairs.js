@@ -1,4 +1,4 @@
-// Musical Chairs: when the music stops, park and hold the spot for a second. Spots shrink each round.
+// Musical Trucks: when the music stops, park and hold the spot for a second. Spots shrink each round.
 import * as THREE from 'three';
 import { Mode } from './base.js';
 import { scatterOpenProps } from '../world/city.js';

@@ -1,4 +1,4 @@
-// Procedural WebAudio: engine hum, hits, boosts, coins, UI ticks and a chiptune loop for Musical Chairs.
+// Procedural WebAudio: engine hum, hits, boosts, coins, UI ticks and a chiptune loop for Musical Trucks.
 export class AudioSys {
   constructor() {
     this.ctx = null; this.master = null; this.engine = null; this.music = null; this.muted = false;
@@ -83,7 +83,7 @@ export class AudioSys {
     this.engine = null;
   }
 
-  // Chiptune loop for Musical Chairs
+  // Chiptune loop for Musical Trucks
   startMusic() {
     if (!this.ctx || this.music) return;
     const bpm = 150, beat = 60 / bpm;

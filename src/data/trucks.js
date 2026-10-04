@@ -1,3 +1,4 @@
+// The bank of trucks (14). Trucks with a model in src/assets/trucks render it; the rest use the procedural mesh.
 // The bank of trucks. stats are 1..5. special.kind maps to a mechanic in vehicles/specials.js
 export const TRUCKS = [
   { id: 'bratzilla', name: 'Bratzilla', food: 'brats & hot dogs', body: 0xc8452c, accent: 0xf3d27a, trim: 0x2b1d1a, topper: 'sausage',
@@ -15,9 +16,6 @@ export const TRUCKS = [
   { id: 'ramenator', name: 'Ramenator', food: 'ramen', body: 0x1c1c22, accent: 0xff3b3b, trim: 0xc9c9c9, topper: 'bowl',
     stats: { speed: 4, accel: 3, handling: 4, weight: 3 },
     special: { name: 'Noodle Net', kind: 'net', cooldown: 10, icon: 'ramen', desc: 'Launches a sticky noodle net that snares the first truck it hits.' } },
-  { id: 'chili', name: 'Chili Con Carnage', food: 'chili', body: 0x8b1a1a, accent: 0xffb347, trim: 0x2a0d0d, topper: 'pot',
-    stats: { speed: 3, accel: 3, handling: 3, weight: 4 },
-    special: { name: 'Chili Spill', kind: 'slick', burn: true, cooldown: 10, icon: 'chili', desc: 'Dumps a boiling chili pot out the back. Slippery and scorching.' } },
   { id: 'churricane', name: 'Churricane', food: 'churros', body: 0xd98c3f, accent: 0x7b3f10, trim: 0xfff0d6, topper: 'churro',
     stats: { speed: 4, accel: 4, handling: 2, weight: 3 },
     special: { name: 'Sugar Spin', kind: 'spinAttack', cooldown: 12, icon: 'churro', desc: 'Spins like a cinnamon cyclone, smashing everything around.' } },
@@ -30,9 +28,6 @@ export const TRUCKS = [
   { id: 'gyro', name: 'Supergyro', food: 'gyros', body: 0x2f6fd6, accent: 0xffffff, trim: 0x11284f, topper: 'spit',
     stats: { speed: 4, accel: 3, handling: 3, weight: 3 },
     special: { name: 'Gyro Spin', kind: 'ram', cooldown: 14, icon: 'gyro', desc: 'Becomes an unstoppable spinning battering ram for a few seconds.' } },
-  { id: 'pho', name: 'Pho King', food: 'pho', body: 0x7a3fb5, accent: 0xffd166, trim: 0x2a1543, topper: 'bowl',
-    stats: { speed: 3, accel: 4, handling: 3, weight: 3 },
-    special: { name: 'Broth Bomb', kind: 'lob', cooldown: 11, icon: 'pho', desc: 'Lobs a bowl of boiling pho. It bursts into a scalding steam cloud.' } },
   { id: 'eggatron', name: 'Eggatron', food: 'eggs & breakfast', body: 0xfff3b0, accent: 0xffb100, trim: 0x6d5a1e, topper: 'egg',
     stats: { speed: 3, accel: 5, handling: 3, weight: 2 },
     special: { name: 'Egg Mines', kind: 'mines', count: 3, cooldown: 11, icon: 'egg', desc: 'Lays three jumbo eggs. Whoever cracks one spins out.' } },

@@ -8,12 +8,14 @@ import { makeMenuPlan } from '../world/layouts.js';
 import { RNG } from '../core/rng.js';
 import { fmtMoney } from '../core/math.js';
 import { icon, mountIcons } from './icons.js';
+import { loadTruckModel, loadTruckModels, onTruckModelLoaded, truckModelIds } from '../vehicles/models.js';
 
 export class Menu {
-  constructor(renderer, audio, { onPlay }) {
+  constructor(renderer, audio, { onPlay, envMap }) {
+    this.envMap = envMap;
     this.renderer = renderer; this.audio = audio; this.onPlay = onPlay;
     this.el = document.getElementById('menu');
-    this.truckIdx = parseInt(localStorage.getItem('ms.truck') || '0', 10) % TRUCKS.length;
+    this.truckIdx = Math.max(0, TRUCKS.findIndex((t) => t.id === localStorage.getItem('ms.truckId')));
     this.modeId = localStorage.getItem('ms.mode') || 'race';
     this.bet = parseInt(localStorage.getItem('ms.bet') || '10', 10);
     this.bank = 0;
@@ -29,6 +31,12 @@ export class Menu {
     for (const v of BETS) { const b = document.createElement('button'); b.innerHTML = `<span>$${v}</span>`; b.dataset.bet = v; b.addEventListener('click', () => { this.bet = v; localStorage.setItem('ms.bet', v); this.refresh(); this.audio.tick(); }); bets.appendChild(b); }
     $('playBtn').addEventListener('click', () => this.play());
     this.setTruck(this.truckIdx);
+    // models: selected truck first, then everything else in the background; rebuild meshes as they arrive
+    onTruckModelLoaded((id) => {
+      if (id === this.truck.id) this.setTruck(this.truckIdx, false);
+      for (const n of this.neighbours) if (n.def.id === id) this.placeNeighbour(n);
+    });
+    loadTruckModel(this.truck.id).then(() => loadTruckModels(truckModelIds()));
   }
 
   buildScene() {
@@ -38,6 +46,7 @@ export class Menu {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(weather.sky);
     this.scene.fog = new THREE.Fog(weather.fog, 90, 320);
+    if (this.envMap) { this.scene.environment = this.envMap; this.scene.environmentIntensity = 0.6; }
     this.scene.add(new THREE.HemisphereLight(weather.hemi[0], weather.hemi[1], weather.ambient * 2.0));
     this.scene.add(new THREE.AmbientLight(0xffffff, weather.ambient * 0.5));
     const sun = new THREE.DirectionalLight(weather.sunColor, weather.sun); sun.position.set(40, 70, 30); sun.castShadow = true;
@@ -46,13 +55,9 @@ export class Menu {
     const plan = makeMenuPlan(rng);
     this.city = buildCity(this.scene, plan, nb, weather, rng);
     // a couple of parked neighbours along the kerb
-    const others = rng.shuffle(TRUCKS).slice(0, 3);
-    for (const [k, def] of others.entries()) {
-      const m = buildTruckMesh(def);
-      const spots = [[4.5, -22, 0], [-4.5, 24, Math.PI], [26, 4.5, Math.PI / 2]];
-      m.position.set(spots[k][0], 0, spots[k][1]); m.rotation.y = spots[k][2];
-      this.scene.add(m);
-    }
+    const spots = [[4.5, -22, 0], [-4.5, 24, Math.PI], [26, 4.5, Math.PI / 2]];
+    this.neighbours = rng.shuffle(TRUCKS).slice(0, 3).map((def, k) => ({ def, spot: spots[k], mesh: null }));
+    for (const n of this.neighbours) this.placeNeighbour(n);
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.5, 600);
     this.orbit = 0.8; this.truckMesh = null;
     this.updateCamera();
@@ -62,13 +67,19 @@ export class Menu {
     this.camera.position.set(Math.sin(this.orbit) * r, h, Math.cos(this.orbit) * r);
     this.camera.lookAt(0, 2.4, 0);
   }
+  placeNeighbour(n) {
+    if (n.mesh) this.scene.remove(n.mesh);
+    n.mesh = buildTruckMesh(n.def); n.mesh.position.set(n.spot[0], 0, n.spot[1]); n.mesh.rotation.y = n.spot[2];
+    this.scene.add(n.mesh);
+  }
   get truck() { return TRUCKS[this.truckIdx]; }
-  setTruck(i) {
-    this.truckIdx = ((i % TRUCKS.length) + TRUCKS.length) % TRUCKS.length; localStorage.setItem('ms.truck', this.truckIdx);
+  setTruck(i, pop = true) {
+    this.truckIdx = ((i % TRUCKS.length) + TRUCKS.length) % TRUCKS.length; localStorage.setItem('ms.truckId', this.truck.id);
     if (this.truckMesh) this.scene.remove(this.truckMesh);
     this.truckMesh = buildTruckMesh(this.truck); this.truckMesh.rotation.y = 0.55;
     this.scene.add(this.truckMesh); this.refresh();
-    this.popT = 0.35;
+    if (pop) this.popT = 0.35;
+    loadTruckModel(this.truck.id);
   }
   setBank(v) { this.bank = v; this.refresh(); }
   refresh() {

@@ -3,6 +3,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
+  assetsInclude: ['**/*.glb'],
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 1200,
@@ -30,6 +31,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // truck models are content-hashed and fetched on demand, then served from cache (also offline)
+        runtimeCaching: [{ urlPattern: /\.glb$/, handler: 'CacheFirst', options: { cacheName: 'truck-models', expiration: { maxEntries: 40 } } }],
       },
     }),
   ],

@@ -3,15 +3,18 @@ import '@fontsource/luckiest-guy';
 import '@fontsource/fredoka/500.css';
 import '@fontsource/fredoka/700.css';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RNG } from './core/rng.js';
 import { Input } from './core/input.js';
 import { AudioSys } from './core/audio.js';
-import { rollGameParams, rollOutcome } from './data/modes.js';
+import { rollGameParams, rollOutcome, pickLineup } from './data/modes.js';
+import { loadTruckModels } from './vehicles/models.js';
 import { Menu } from './ui/menu.js';
 import { Hud } from './ui/hud.js';
 import { runPregame } from './ui/pregame.js';
 import { showResults } from './ui/results.js';
 import { Game } from './game.js';
+import { TRUCKS } from './data/trucks.js';
 
 const canvas = document.getElementById('gl');
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -21,6 +24,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2)
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
 
+const envMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 const input = new Input();
 const audio = new AudioSys();
 const BANK_KEY = 'ms.bank';
@@ -36,7 +40,7 @@ const pregameSignal = { cancel: null };
 const fadeEl = document.getElementById('fade');
 function flash(ms = 700) { fadeEl.style.transition = 'none'; fadeEl.style.opacity = '1'; requestAnimationFrame(() => requestAnimationFrame(() => { fadeEl.style.transition = `opacity ${ms}ms ease`; fadeEl.style.opacity = '0'; })); }
 const hud = new Hud(input, () => quitGame());
-const menu = new Menu(renderer, audio, { onPlay: (def, modeId, bet) => startMatch(def, modeId, bet) });
+const menu = new Menu(renderer, audio, { onPlay: (def, modeId, bet) => startMatch(def, modeId, bet), envMap });
 menu.setBank(bank);
 
 function resize() {
@@ -56,14 +60,16 @@ async function startMatch(def, modeId, bet) {
   const rng = new RNG();
   const params = rollGameParams(modeId, rng);
   const outcome = rollOutcome(params, bet, rng);
+  params.lineup = pickLineup(params, def.id);
+  const modelsReady = loadTruckModels([def.id, ...params.lineup]);
   state = 'pregame';
   if (game) { game.dispose(); game = null; }
-  const ok = await runPregame(params, outcome, bet, audio, def, pregameSignal);
+  const ok = await runPregame(params, outcome, bet, audio, def, pregameSignal, modelsReady);
   if (!ok || state !== 'pregame') return;
   state = 'game';
   flash(800);
   game = new Game({
-    renderer, input, audio, hud, params, outcome, playerDef: def,
+    renderer, input, audio, hud, params, outcome, playerDef: def, envMap,
     onFinish: (result) => finishMatch(result, params, outcome),
   });
 }
@@ -103,3 +109,4 @@ requestAnimationFrame(frame);
 
 // debug / automation hook (harmless in production)
 window.__ms = { get game() { return game; }, get state() { return state; }, startMatch, get bank() { return bank; }, menu, input };
+window.__TRUCKS = TRUCKS;

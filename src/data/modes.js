@@ -1,3 +1,6 @@
+import { RNG } from '../core/rng.js';
+import { TRUCKS } from './trucks.js';
+
 export const MODES = {
   race: {
     id: 'race', name: 'Race', icon: 'flag',
@@ -24,8 +27,8 @@ export const MODES = {
     blurb: 'Futsal with food trucks. Whole winning team splits the pot.',
   },
   chairs: {
-    id: 'chairs', name: 'Musical Chairs', icon: 'note',
-    players: { fixed: 16 },
+    id: 'chairs', name: 'Musical Trucks', icon: 'note',
+    players: { fixed: 14 },
     time: null,
     winners: [[1]],
     teams: false,
@@ -55,6 +58,12 @@ export const WEATHERS = [
 
 export const BETS = [5, 10, 25, 50, 100];
 
+/** The bot trucks for a match, picked from the seed so their models can load during matchmaking. */
+export function pickLineup(params, playerId) {
+  const rng = new RNG((params.seed ^ 0x5bd1e995) >>> 0);
+  return rng.shuffle(TRUCKS.filter((t) => t.id !== playerId)).slice(0, params.players - 1).map((t) => t.id);
+}
+
 /** Roll the randomized game-determining fields for a mode. */
 export function rollGameParams(modeId, rng) {
   const m = MODES[modeId];
@@ -69,8 +78,9 @@ export function rollGameParams(modeId, rng) {
   const weather = rng.pick(WEATHERS);
   let rounds = null, spotSchedule = null;
   if (modeId === 'chairs') {
+    // 14 trucks: spots left after each round, ending with a single winner
     rounds = rng.pick([4, 5]);
-    spotSchedule = rounds === 4 ? [12, 8, 4, 1] : rng.pick([[13, 10, 7, 4, 1], [12, 9, 6, 3, 1], [13, 9, 6, 3, 1]]);
+    spotSchedule = rounds === 4 ? rng.pick([[10, 7, 4, 1], [11, 7, 4, 1], [10, 6, 3, 1]]) : rng.pick([[11, 8, 5, 3, 1], [11, 8, 6, 3, 1], [12, 9, 6, 3, 1]]);
   }
   return { mode: modeId, players, time, winners, neighbourhood, weather, rounds, spotSchedule, seed: rng.int(0, 2 ** 31) };
 }
