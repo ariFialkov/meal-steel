@@ -35,7 +35,7 @@ There is no networking. Opponents are bots whose driving is meant to look like p
 
 ### Truck models
 
-Textured models live in `src/assets/trucks/<truck id>.glb` and are picked up automatically; trucks without one fall back to a blocky built-in mesh. To add or replace models from Meshy-style exports (one folder per truck, named after the truck, holding the `*_texture.fbx` and its PNG maps):
+All 14 trucks have textured models in `src/assets/trucks/<truck id>.glb`, picked up automatically; a truck without one (or whose model fails to load) falls back to a blocky built-in mesh. To add or replace models from Meshy-style exports (one folder per truck, named after the truck, holding the `*_texture.fbx` and its PNG maps):
 
 ```bash
 node scripts/import-trucks.mjs <folder-of-truck-folders> [--only <truck id>]
