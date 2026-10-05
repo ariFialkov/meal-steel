@@ -34,8 +34,12 @@ export class RumbleMode extends Mode {
     // trucks in a ring facing centre
     const n = this.trucks.length, order = rng.shuffle(this.trucks);
     order.forEach((tr, i) => {
-      const a = (i / n) * Math.PI * 2;
-      tr.place(this.ring.x + Math.cos(a) * 34, this.ring.z + Math.sin(a) * 34, Math.atan2(-Math.cos(a), -Math.sin(a)));
+      // start positions on a circle, nudged round until clear of every ramp
+      let a = (i / n) * Math.PI * 2, R = 34;
+      const clear = (ang) => this.ramps.every((r) => Math.hypot(this.ring.x + Math.cos(ang) * R - r.cx, this.ring.z + Math.sin(ang) * R - r.cz) > r.len / 2 + 5);
+      for (let k = 0; k < 12 && !clear(a); k++) a += (k % 2 ? -1 : 1) * (k + 1) * 0.04;
+      if (!clear(a)) R = 46;
+      tr.place(this.ring.x + Math.cos(a) * R, this.ring.z + Math.sin(a) * R, Math.atan2(-Math.cos(a), -Math.sin(a)));
       Object.assign(tr, { score: 0, outOfRing: false, outTime: 0, hp: MAX_HP, ko: false, lastDmg: -99, regenLeft: 0 });
     });
     // director: score ranks
@@ -130,7 +134,7 @@ export class RumbleMode extends Mode {
     const { group: grp, pad } = servingSpot(rng);
     grp.position.set(x, 0, z); grp.rotation.y = a + Math.PI / 2; grp.scale.setScalar(0.01);
     this.spotGroup.add(grp);
-    const queue = new ServeQueue(grp, rng); queue.onPuff = (wx, wy, wz) => this.game.fx.smoke(wx, wy, wz, 1, 0x8a8a8a, 0.16);
+    const queue = new ServeQueue(grp, rng);
     this.spots.push({ x, z, mesh: grp, life: this.rng.range(20, 28), age: 0, occupant: null, occupiedT: 0, pad, queue });
   }
   spawnItem() {

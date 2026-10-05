@@ -7,6 +7,7 @@ import { makePlan } from './world/layouts.js';
 import { buildCity } from './world/city.js';
 import { generateTrack } from './world/track.js';
 import { Truck, collideTrucks } from './vehicles/truck.js';
+import { createTruckFx } from './vehicles/truckfx.js';
 import { Specials } from './vehicles/specials.js';
 import { Particles } from './fx/particles.js';
 import { RaceMode } from './modes/race.js';
@@ -59,7 +60,7 @@ export class Game {
     this.player = new Truck(this.playerDef, { isPlayer: true });
     this.bots = bots.map((d) => new Truck(d));
     this.trucks = [this.player, ...this.bots];
-    for (const t of this.trucks) scene.add(t.mesh);
+    for (const t of this.trucks) { scene.add(t.mesh); t.rigFx = createTruckFx(t, t.mesh, t.def.id); }
 
     if (w.night) { this.headlight = new THREE.SpotLight(0xfff2cc, 180, 60, 0.6, 0.5, 1.2); this.headlight.castShadow = false; scene.add(this.headlight); scene.add(this.headlight.target); }
     if (w.rain) {
@@ -161,6 +162,8 @@ export class Game {
     }
     this.specials.update(dt, this.trucks, t, this.world, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s));
     this.props.update(dt);
+    // per-truck moving parts and effects (particles only for trucks near the camera)
+    for (const tr of this.trucks) if (tr.rigFx && tr.mesh.visible) tr.rigFx.update(dt, t, this.fx, Math.hypot(tr.x - this.camera.position.x, tr.z - this.camera.position.z) < 90);
     this.fx.update(dt);
     if (this.rain) { const pos = this.rain.geometry.attributes.position; for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) - 40 * dt; if (y < 0) y += 40; pos.setY(i, y); } pos.needsUpdate = true; this.rain.position.set(this.camera.position.x, 0, this.camera.position.z); }
     // audio

@@ -24,9 +24,9 @@ export class BotDriver {
     if (world && dist > 4) {
       const look = clamp(6 + tr.speed * 0.9, 8, 30);
       const h = tr.heading;
-      const dL = world.rayDistance(tr.x, tr.z, Math.sin(h - 0.45), Math.cos(h - 0.45), look);
-      const dC = world.rayDistance(tr.x, tr.z, Math.sin(h), Math.cos(h), look);
-      const dR = world.rayDistance(tr.x, tr.z, Math.sin(h + 0.45), Math.cos(h + 0.45), look);
+      const dL = world.rayDistance(tr.x, tr.z, Math.sin(h - 0.45), Math.cos(h - 0.45), look, true);
+      const dC = world.rayDistance(tr.x, tr.z, Math.sin(h), Math.cos(h), look, true);
+      const dR = world.rayDistance(tr.x, tr.z, Math.sin(h + 0.45), Math.cos(h + 0.45), look, true);
       let avoid = 0;
       if (dC < look) avoid += (dL > dR ? -1 : 1) * (1 - dC / look) * 1.6;
       if (dL < look * 0.8) avoid += (1 - dL / look) * 1.0;

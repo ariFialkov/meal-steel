@@ -51,6 +51,7 @@ export function buildCity(scene, plan, nb, weather, rng) {
     const type = plan.blocks[j][i];
     if (type === 'open') continue;
     const r = blockRect(plan, i, j), x0 = r.x0 - 1.5, x1 = r.x1 + 1.5, z0 = r.z0 - 1.5, z1 = r.z1 + 1.5;
+    world.addPad(x0, z0, x1, z1, 0.25); // pavement / lawn kerb height
     if (type === 'park') {
       ground('grass', x0 + 0.3, z0 + 0.3, x1 - 0.3, z1 - 0.3, 0.25, TILE.grass[0]);
       ground('sidewalk', x0, z0, x1, z0 + 0.3, 0.25, TILE.sidewalk[0], walkTint); ground('sidewalk', x0, z1 - 0.3, x1, z1, 0.25, TILE.sidewalk[0], walkTint);
@@ -77,6 +78,7 @@ export function buildCity(scene, plan, nb, weather, rng) {
     const c = plan.clear;
     const x0 = roadX(plan, c.i0) + P_ROAD / 2 - 1.5, x1 = roadX(plan, c.i1 + 1) - P_ROAD / 2 + 1.5;
     const z0 = roadZ(plan, c.j0) + P_ROAD / 2 - 1.5, z1 = roadZ(plan, c.j1 + 1) - P_ROAD / 2 + 1.5;
+    world.addPad(x0, z0, x1, z1, 0.2);
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, half = Math.min(x1 - x0, z1 - z0) / 2, ts = TILE.sidewalk[0] / 2.2;
     const S = cb.bucket('sidewalk'), P = cb.bucket('paint'), dark = rgb('#6d625c'), terra = rgb('#c75a34');
     const ringQuad = (r0, r1, a0, a1, col, yy, B = S, tile = ts) => { const p = (r, a) => [cx + Math.cos(a) * r, yy, cz + Math.sin(a) * r], q = [p(r0, a0), p(r1, a0), p(r1, a1), p(r0, a1)]; B.quad(q[0], q[1], q[2], q[3], [0, 1, 0], q.map((v) => [v[0] / tile, v[2] / tile]), col); };
@@ -84,7 +86,7 @@ export function buildCity(scene, plan, nb, weather, rng) {
     const paint = (ax, az, bx, bz, col = [0.96, 0.96, 0.94], yy = 0.215) => P.quad([ax, yy, az], [ax, yy, bz], [bx, yy, bz], [bx, yy, az], [0, 1, 0], null, col);
     // raised lawn bed with a kerb and trees (corners, outside the driving circle)
     const garden = (gx0, gz0, gx1, gz1, trees = 2) => {
-      ground('grass', gx0, gz0, gx1, gz1, 0.32, TILE.grass[0]);
+      ground('grass', gx0, gz0, gx1, gz1, 0.32, TILE.grass[0]); world.addPad(gx0, gz0, gx1, gz1, 0.32);
       curbBox(gx0 - 0.25, gz0 - 0.25, gx1 + 0.25, gz0, 0.34, 0.16, '#bdb8ae'); curbBox(gx0 - 0.25, gz1, gx1 + 0.25, gz1 + 0.25, 0.34, 0.16, '#bdb8ae');
       curbBox(gx0 - 0.25, gz0, gx0, gz1, 0.34, 0.16, '#bdb8ae'); curbBox(gx1, gz0, gx1 + 0.25, gz1, 0.34, 0.16, '#bdb8ae');
       for (let k = 0; k < trees; k++) props.add(k === 0 ? 'bigtree' : 'tree', rng.range(gx0 + 2.5, gx1 - 2.5), rng.range(gz0 + 2.5, gz1 - 2.5), rng.range(0, 6.28), rng.range(0.9, 1.2));

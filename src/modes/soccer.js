@@ -5,7 +5,7 @@ import { BotDriver } from '../ai/bot.js';
 import { buildArena as buildArenaVisuals, soccerBall, teamMarker, waveFlag, NeonScoreboard } from '../world/setpieces.js';
 import { clamp, fmtTime } from '../core/math.js';
 
-const BALL_R = 1.6;
+const BALL_R = 1.6, TURF_Y = 0.22; // turf surface height
 
 export class SoccerMode extends Mode {
   setup() {
@@ -38,7 +38,8 @@ export class SoccerMode extends Mode {
     const li = teamsSeq.lastIndexOf(winner); [teamsSeq[li], teamsSeq[teamsSeq.length - 1]] = [teamsSeq[teamsSeq.length - 1], teamsSeq[li]];
     this.schedule = times.map((t, i) => ({ t, team: teamsSeq[i], done: false }));
     this.winner = winner;
-    this.ball = { x: 0, y: BALL_R, z: 0, vx: 0, vy: 0, vz: 0, lastTouch: null, lastTouchT: -9 };
+    g.world.addPad(this.A.minX, this.A.minZ - this.A.goalDepth, this.A.maxX, this.A.maxZ + this.A.goalDepth, TURF_Y);
+    this.ball = { x: 0, y: BALL_R + TURF_Y, z: 0, vx: 0, vy: 0, vz: 0, lastTouch: null, lastTouchT: -9 };
     const bm = soccerBall(BALL_R); g.scene.add(bm); this.ballMesh = bm;
     this.kickoff(1.5);
     this.celebrate = 0; this.stoppage = false; this.lastShotDenied = -9;
@@ -109,7 +110,7 @@ export class SoccerMode extends Mode {
     b.vy -= 20 * dt;
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
     const drag = Math.exp(-0.25 * dt); b.vx *= drag; b.vz *= drag;
-    if (b.y < BALL_R) { if (!b.live) { b.live = true; this.game.audio.thud(); this.game.fx.smoke(b.x, 0.3, b.z, 6, 0xdddddd, 0.6); } b.y = BALL_R; b.vy = Math.abs(b.vy) > 1.5 ? -b.vy * 0.6 : 0; b.vx *= 0.97; b.vz *= 0.97; }
+    if (b.y < BALL_R + TURF_Y) { if (!b.live) { b.live = true; this.game.audio.thud(); this.game.fx.smoke(b.x, 0.3, b.z, 6, 0xdddddd, 0.6); } b.y = BALL_R + TURF_Y; b.vy = Math.abs(b.vy) > 1.5 ? -b.vy * 0.6 : 0; b.vx *= 0.97; b.vz *= 0.97; }
     if (b.y > 16) { b.y = 16; b.vy = -Math.abs(b.vy) * 0.5; }
     // side walls
     if (b.x < A.minX + BALL_R) { b.x = A.minX + BALL_R; b.vx = Math.abs(b.vx) * 0.8; }

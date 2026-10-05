@@ -35,18 +35,20 @@ export class RaceMode extends Mode {
       b.targetRank = rank;
       const ahead = rank < place;
       const k = ahead ? (place - rank) : (rank - place);
-      b.finalGap = (ahead ? 1 : -1) * (10 + k * 12 + this.rng.range(0, 6));
-      b.noiseSeed = this.rng.range(0, 1000); b.noiseAmp = this.rng.range(18, 32);
+      // each truck has a slot in the train around the player (k places ahead or behind), about 6 m apart: early on
+      // it wanders a lot around that slot (places swap, the order looks open), later less and less
+      b.finalGap = (ahead ? 1 : -1) * (4 + k * 6 + this.rng.range(0, 3));
+      b.noiseSeed = this.rng.range(0, 1000); b.noiseAmp = this.rng.range(10, 16);
       b.laneOff = this.rng.range(-2.5, 2.5); b.laneSeed = this.rng.range(0, 100);
       b.boostMul = 1;
       this.drivers.set(b.id, new BotDriver(b, this.rng));
     });
     this.player.targetRank = place;
     this.startTime = 0; this.playerFinished = false; this.lastWrongWay = 0;
-    // the order sorts itself out gradually over a long window (settled by roughly 75-90% of the race), so nobody
+    // the order sorts itself out gradually over a long window (settled by roughly 65-88% of the race), so nobody
     // needs more than a modest pace advantage; now and then it opens late for a last-gasp comeback
-    this.corrStart = this.rng.chance(0.12) ? this.rng.range(0.7, 0.76) : this.rng.range(0.52, 0.68);
-    this.corrEnd = Math.min(0.93, this.corrStart + this.rng.range(0.17, 0.22));
+    this.corrStart = this.rng.chance(0.12) ? this.rng.range(0.62, 0.7) : this.rng.range(0.45, 0.62);
+    this.corrEnd = Math.min(0.88, this.corrStart + this.rng.range(0.2, 0.25));
     this.limiterUsed = 0; this.pPace = 20; this._v = new THREE.Vector3();
     this.mapBounds = this.computeBounds();
   }
@@ -64,6 +66,8 @@ export class RaceMode extends Mode {
     const pRemain = Math.max(0, track.finishS - p.trackS);
     // the player's pace, smoothed: instant speed jumps around in crashes and corners
     this.pPace = damp(this.pPace, clamp(p.speed, 8, p.maxSpeed), 0.8, dt);
+    // and the player's speed right now (lightly smoothed): late in the race bots match it, so a pass sticks
+    this.pNow = damp(this.pNow ?? p.speed, p.speed, 4, dt);
     const win = smoothstep(this.corrStart, this.corrEnd, frac);
 
     for (const b of this.bots) {
@@ -77,17 +81,30 @@ export class RaceMode extends Mode {
       b.correcting = blend > 0.02;
       if (b.correcting && b.correctFrom === undefined) b.correctFrom = frac;
       // open racing: wander around the player (ahead-slated trucks mostly ahead, the rest mostly behind)
-      const wander = noise1(t * 0.06 + b.noiseSeed) * b.noiseAmp + (ahead ? 8 : -8);
+      // (a tight pack: the field stays around the player for most of the race)
+      const settle = clamp(frac / Math.max(0.2, this.corrStart), 0, 1);
+      const wander = b.finalGap + noise1(t * 0.06 + b.noiseSeed) * b.noiseAmp * (1 - 0.65 * settle);
       const desired = wander * (1 - blend) + b.finalGap * blend;
       let err = desired - gap; // > 0: needs to gain on the player
       if (this.playerFinished) err = ahead ? 80 : -20;
       // pace: the player's pace plus a proportional term; a hidden power boost of at most 30% when short of the target
-      let boost = 1 + clamp((err - 8) / 90, 0, 0.3);
+      // bots are proper racers (a little stronger than their stats) and close gaps quickly when they fall back
+      let boost = 1.06 + clamp((err - 4) / 35, 0, 0.39);
       // slipstream: tucked in behind the player a climber gets a small tow
-      if (ahead && b.correcting && gap < -4 && gap > -30) boost = Math.min(1.36, boost + 0.06);
+      if (ahead && b.correcting && gap < -4 && gap > -30) boost = Math.min(1.6, boost + 0.06 + (blend > 0.5 ? 0.08 : 0));
+      // slingshot: late on, a climber tucked in close behind the player pulls out of the tow and gets past
+      if (ahead && blend > 0.55 && gap < -2 && gap > -22 && !this.playerFinished) boost = Math.max(boost, 1.72);
       // floors: a truck slated ahead may run away (never crawls waiting for the player); one slated behind slows to be caught
       const toLine = track.finishS - b.trackS;
-      let speedFactor = clamp((this.pPace / (b._baseMax * boost)) * (1 + err / 35), ahead ? 0.5 : gap > 0 && toLine < 160 ? 0.12 : 0.3, 1.3);
+      let speedFactor = clamp((this.pPace / (b._baseMax * boost)) * (1 + err / 35), ahead ? 0.35 : gap > 0 && toLine < 160 ? 0.12 : 0.3, 1.3);
+      if (err > 12) speedFactor = Math.max(speedFactor, Math.min(1.3, 0.95 + (err - 12) / 25)); // short of its place: flat out
+      // late on, once a truck slated ahead is past the player it never drops below the player's speed (the pass
+      // sticks), and one slated behind never out-runs the player while it is just behind
+      if (blend > 0.4 && !this.playerFinished) {
+        const pv = this.pNow / (b._baseMax * boost);
+        if (ahead && gap > -2) speedFactor = Math.max(speedFactor, Math.min(1.3, pv * (gap < b.finalGap ? 1.08 : 1.0)));
+        if (!ahead && gap < 2 && gap > -25) speedFactor = Math.min(speedFactor, pv * 0.97);
+      }
       // corners: always brake (handling scales with the boost, so the cap is relative)
       speedFactor = Math.min(speedFactor, this.turnCap(b));
       // behind-slated trucks that are still ahead of the player late on slip up now and then
@@ -110,7 +127,9 @@ export class RaceMode extends Mode {
       this.rails(b, dt);
       // lanes: pick the clearest way past whatever is ahead; if every lane is blocked, follow instead of ramming
       const passSide = (p.trackLat ?? 0) > 0 ? -1 : 1;
-      const preferred = b.correcting && !this.playerFinished ? passSide * (ahead ? 2.4 : -2.4) : b.laneOff;
+      // a truck that has to drop back moves over to the side away from the player instead of blocking the road
+      // (to the player's side: the climbers pass on the other one, and the player has traffic to get round, as in a real race)
+      const preferred = err < -8 && !this.playerFinished ? -passSide * 3.4 : b.correcting && !this.playerFinished && ahead ? passSide * 2.4 : b.laneOff;
       const plan = this.planLane(b, preferred, dt);
       speedFactor = Math.min(speedFactor, plan.cap);
       const lane = b.wideLane ?? b.laneCur;
@@ -118,8 +137,9 @@ export class RaceMode extends Mode {
       const [tx, tz] = this.followTarget(b, look, clamp(lane + noise1(t * 0.2 + b.laneSeed) * 0.25, b.laneLo, b.laneHi));
       if (Math.abs(b.trackLat) > 6) speedFactor = Math.min(speedFactor, 0.7);
       this.unstick(b, drv, t);
-      b.dbg = { err: Math.round(err), sf: +speedFactor.toFixed(2), boost: +b.boostMul.toFixed(2), corr: b.correcting, lane: +b.laneCur.toFixed(1), clear: Math.round(plan.clear) };
-      this.driveLane(b, drv, tx, tz, speedFactor, dt, plan.clear > 25 && speedFactor > 1.05);
+      b.dbg = { err: Math.round(err), sf: +speedFactor.toFixed(2), boost: +b.boostMul.toFixed(2), corr: b.correcting, lane: +b.laneCur.toFixed(1), clear: Math.round(plan.clear), cap: plan.cap, tcap: this.turnCap(b) };
+      // turbo like a person would: on a clear straight whenever the truck is not supposed to be dropping back
+      this.driveLane(b, drv, tx, tz, speedFactor, dt, plan.clear > 25 && err > -6 && this.turnCap(b) > 1);
       // hidden brake: a behind-slated truck is held short of the line until the player is across
       if (!ahead && !this.playerFinished && b.trackS > track.finishS - 14) { const k = Math.exp((b.trackS > track.finishS - 5 ? -25 : -6) * dt); b.vx *= k; b.vz *= k; }
       if (plan.clear > 12 && g.specials.botWants(b, this.trucks, dt, 0.8)) b.control.special = true;
@@ -209,7 +229,7 @@ export class RaceMode extends Mode {
     const [lo, hi] = this.laneRange(b);
     b.laneLo = lo; b.laneHi = hi;
     const LANES = [-3.6, -1.8, 0, 1.8, 3.6].map((l) => clamp(l, lo, hi)).filter((l, i, a) => a.indexOf(l) === i), W = 2.8;
-    if (b.laneCur === undefined) { b.laneCur = clamp(b.trackLat ?? b.laneOff, -3.6, 3.6); b.laneTarget = b.laneCur; }
+    if (b.laneCur === undefined) { b.laneCur = clamp(b.trackLat ?? b.laneOff ?? 0, -3.6, 3.6); b.laneTarget = b.laneCur; }
     const cur = b.trackLat ?? b.laneCur;
     const clearOf = (l) => {
       let clear = 50;
@@ -252,8 +272,9 @@ export class RaceMode extends Mode {
     for (const o of this.trucks) {
       if (o === b || !o.alive || o.trackLat === undefined) continue;
       const ds = o.trackS - b.trackS;
-      if (ds < 0.5 || ds > 28 || Math.abs(o.trackLat - b.trackLat) > W) continue;
-      const vo = Math.max(0, o.fwdSpeed), vSafe = ds < 8 ? vo * 0.9 - (8 - ds) * 0.8 : vo + (ds - 8) * 0.8;
+      if (ds < 0.5 || ds > 16 || Math.abs(o.trackLat - b.trackLat) > 2.5) continue; // actually overlapping
+      // keep pace with it (racing in its slipstream), easing off only when right on its bumper
+      const vo = Math.max(0, o.fwdSpeed), vSafe = ds < 6.5 ? vo * 0.85 : vo * 0.97 + (ds - 6.5) * 0.9;
       cap = Math.min(cap, Math.max(0, vSafe) / Math.max(1, b.maxSpeed));
     }
     if (b.forceT > 0) cap = Math.max(cap, 0.22);
@@ -306,7 +327,7 @@ export class RaceMode extends Mode {
   turnCap(tr) {
     const a1 = trackPointAt(this.track, tr.trackS + 6), a2 = trackPointAt(this.track, tr.trackS + 14 + tr.speed * 0.9);
     const turn = Math.acos(clamp(a1.tx * a2.tx + a1.tz * a2.tz, -1, 1));
-    return turn > 1.2 ? 0.45 : turn > 0.7 ? 0.6 : turn > 0.35 ? 0.8 : 1.4;
+    return turn > 1.2 ? 0.62 : turn > 0.7 ? 0.78 : turn > 0.35 ? 0.93 : 1.4;
   }
   /** soft rail: pull a truck back toward the road when it drifts wide (bots and autopilot only) */
   rails(tr, dt) {
@@ -318,14 +339,17 @@ export class RaceMode extends Mode {
     if (Math.abs(lat) > 6.5) { const want = Math.atan2(a0.tx, a0.tz); tr.heading += angleDiff(tr.heading, want) * Math.min(1, 3 * dt); if (tr.speed < 2) { tr.vx += a0.tx * 6 * dt; tr.vz += a0.tz * 6 * dt; } }
   }
   autopilot(dt, t) {
+    // test driver: a competent person (racing line, clean overtakes, turbo on the straights)
     const p = this.player, g = this.game;
     if (p.finishedAt !== null) { this.playerDriver().stop(dt); return; }
-    const [tx, tz] = this.followTarget(p, 6 + p.speed * 0.35, 0);
-    let sf = Math.min(1.0, this.turnCap(p));
+    trackProgress(this.track, p);
+    const plan = this.planLane(p, 0, dt);
+    const [tx, tz] = this.followTarget(p, clamp(5 + p.speed * 0.3, 6, 16), clamp(p.laneCur, p.laneLo, p.laneHi));
+    let sf = Math.min(1.3, this.turnCap(p), Math.max(plan.cap, 0.75)); // people barge through traffic
     if (Math.abs(p.trackLat) > 6) sf = Math.min(sf, 0.7);
     this.rails(p, dt);
     this.unstick(p, this.playerDriver(), t);
-    this.playerDriver().drive(tx, tz, sf, dt, t, { world: g.world, avoidTrucks: this.trucks, turbo: true });
+    this.driveLane(p, this.playerDriver(), tx, tz, sf, dt, plan.clear > 25 && this.turnCap(p) > 1);
     if (g.specials.botWants(p, this.trucks, dt, 1)) g.specials.use(p, this.trucks, (a, v, k, s) => this.onSpecialHit(a, v, k, s));
   }
   cruiseAfterFinish(b, dt, t) {

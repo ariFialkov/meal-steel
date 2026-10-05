@@ -1,7 +1,7 @@
 // Customer queues for Rumble serving spots: a short line of pedestrians waits at an open spot; when a truck parks
 // they step up one at a time, order (speech bubble), get their food and walk off. Cheap: a handful of small merged
 // meshes per spot, animated with plain transforms. Knock the serving truck off its spot and the line panics: everyone
-// runs off screaming, arms up and pants on fire, and a fresh line pops back in once a truck holds the spot again.
+// runs off screaming with their arms up, and a fresh line pops back in once a truck holds the spot again.
 import * as THREE from 'three';
 import { GeoBuilder } from '../world/builder.js';
 import { person } from '../world/setpieces.js';
@@ -23,13 +23,7 @@ function shared() {
   const bubble = new THREE.CanvasTexture(c); bubble.colorSpace = THREE.SRGBColorSpace;
   const boxGeo = new THREE.BoxGeometry(0.45, 0.3, 0.32), boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
   const bandGeo = new THREE.BoxGeometry(0.46, 0.08, 0.33), bandMat = new THREE.MeshStandardMaterial({ color: 0xff4d57, roughness: 0.6 });
-  // cartoon flame for panicking customers
-  const f = document.createElement('canvas'); f.width = 64; f.height = 96; const fx = f.getContext('2d');
-  const flame = (sc, col) => { fx.save(); fx.translate(32, 92); fx.scale(sc, sc); fx.beginPath(); fx.moveTo(0, 0); fx.bezierCurveTo(-30, -6, -26, -40, -8, -58); fx.bezierCurveTo(-6, -40, 6, -44, 2, -86); fx.bezierCurveTo(22, -60, 30, -30, 24, -12); fx.bezierCurveTo(20, -2, 10, 0, 0, 0); fx.closePath(); fx.fillStyle = col; fx.fill(); fx.restore(); };
-  fx.lineWidth = 6; fx.strokeStyle = '#22304a'; flame(1, '#ff5a1f'); fx.stroke(); flame(0.68, '#ffb02a'); flame(0.38, '#fff3a0');
-  const flameTex = new THREE.CanvasTexture(f); flameTex.colorSpace = THREE.SRGBColorSpace;
-  const flameMat = new THREE.SpriteMaterial({ map: flameTex, depthWrite: false, toneMapped: false });
-  SHARED = { mat, bubble, boxGeo, boxMat, bandGeo, bandMat, flameMat };
+  SHARED = { mat, bubble, boxGeo, boxMat, bandGeo, bandMat };
   return SHARED;
 }
 
@@ -42,20 +36,18 @@ function makeCustomer(rng) {
   g.userData = { body, food, look, scale };
   return g;
 }
-/** swap a customer into the panic pose (built on demand) with flames on the back and head */
+/** swap a customer into the panic pose (built on demand) */
 function makePanic(m, rng) {
   const S = shared(), u = m.userData, b = new GeoBuilder();
   person(b, 0, 0, 0, rng, u.scale, u.look, 'panic');
   const panic = new THREE.Mesh(b.build(), S.mat); panic.castShadow = true;
   u.body.visible = false; u.food.visible = false; m.add(panic); u.panic = panic;
-  u.flames = [[0, 2.45, -0.05, 0.95], [0.14, 1.35, -0.3, 0.75], [-0.16, 0.9, -0.25, 0.6]].map(([x, y, z, sc]) => { const sp = new THREE.Sprite(S.flameMat); sp.position.set(x, y, z); sp.scale.set(sc * 0.66, sc, 1); sp.userData.base = sc; m.add(sp); return sp; });
 }
 function disposeCustomer(m) { m.userData.body.geometry.dispose(); m.userData.panic?.geometry.dispose(); }
 
 export class ServeQueue {
   constructor(spotGroup, rng) {
     this.group = spotGroup; this.rng = rng; this.line = []; this.leaving = []; this.fleeing = []; this.spawnT = 0; this.cycle = null; this.panicking = false;
-    this.onPuff = null; // (worldX, worldY, worldZ) smoke trail from the runners
     const S = shared();
     this.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.bubble, depthWrite: false })); this.bubble.scale.set(1.3, 1.3, 1); this.bubble.visible = false;
     spotGroup.add(this.bubble);
@@ -115,7 +107,7 @@ export class ServeQueue {
     // new customers wander up to the back of the line
     if (this.line.length < QUEUE_LEN) { this.spawnT += dt; if (this.spawnT > 1.2) { this.spawnT = 0; this.join(ARRIVE); } }
   }
-  /** runners: sprint away zig-zagging with a frantic bounce, flames flickering, then shrink away */
+  /** runners: sprint away zig-zagging with a frantic bounce, then shrink away */
   updateFleeing(dt, t) {
     for (let i = this.fleeing.length - 1; i >= 0; i--) {
       const f = this.fleeing[i], m = f.mesh; f.t += dt;
@@ -123,8 +115,6 @@ export class ServeQueue {
       const a = f.dir + Math.sin(t * 7 + f.wig) * 0.5;
       m.position.x += Math.sin(a) * f.speed * dt; m.position.z += Math.cos(a) * f.speed * dt; m.rotation.y = a;
       m.userData.panic.position.y = Math.abs(Math.sin(t * 19 + f.wig)) * 0.22; m.userData.panic.rotation.z = Math.sin(t * 19 + f.wig) * 0.12;
-      for (const sp of m.userData.flames) { const k = sp.userData.base * (0.85 + Math.random() * 0.35); sp.scale.set(k * 0.66, k, 1); }
-      if (this.onPuff && Math.random() < 0.06) { const w = m.getWorldPosition(_w); this.onPuff(w.x, w.y + 2.2, w.z); }
       if (f.t > 2.3) m.scale.setScalar(Math.max(0.01, 1 - (f.t - 2.3) / 0.4));
       if (f.t > 2.7) { this.group.remove(m); disposeCustomer(m); this.fleeing.splice(i, 1); }
     }

@@ -59,7 +59,26 @@ export class StaticWorld {
     return out;
   }
   /** Does the segment from (x,z) heading dir by length hit any box? Returns distance or Infinity. */
-  rayDistance(x, z, dx, dz, maxLen) {
+  rayDistance(x, z, dx, dz, maxLen, withRamps = false) {
+    const d = this.rayBoxes(x, z, dx, dz, maxLen);
+    return withRamps && this.ramps.length ? Math.min(d, this.rayRamps(x, z, dx, dz, maxLen)) : d;
+  }
+  /** Ramps as obstacles for AI feelers: solid from the sides and the high end, open to a truck lining up a jump. */
+  rayRamps(x, z, dx, dz, maxLen) {
+    let best = Infinity;
+    for (const r of this.ramps) {
+      const qx = x - r.cx, qz = z - r.cz;
+      if (qx * qx + qz * qz > (maxLen + r.len) ** 2) continue;
+      const a0 = qx * r.ux + qz * r.uz + r.len / 2, l0 = -qx * r.uz + qz * r.ux, da = dx * r.ux + dz * r.uz, dl = -dx * r.uz + dz * r.ux;
+      if (a0 < r.len * 0.3 && da > 0.75) continue;
+      let tmin = 0, tmax = maxLen;
+      const slab = (o, dd, lo, hi) => { if (Math.abs(dd) < 1e-6) return o >= lo && o <= hi; let t1 = (lo - o) / dd, t2 = (hi - o) / dd; if (t1 > t2) [t1, t2] = [t2, t1]; tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2); return tmin <= tmax; };
+      if (!slab(a0, da, r.len * 0.15, r.len) || !slab(l0, dl, -r.hw, r.hw)) continue;
+      if (tmin < best) best = tmin;
+    }
+    return best;
+  }
+  rayBoxes(x, z, dx, dz, maxLen) {
     const list = this.hash.query(Math.min(x, x + dx * maxLen) - 1, Math.min(z, z + dz * maxLen) - 1, Math.max(x, x + dx * maxLen) + 1, Math.max(z, z + dz * maxLen) + 1, this._q);
     let best = Infinity;
     for (const a of list) {
@@ -80,6 +99,13 @@ export class StaticWorld {
     return op;
   }
   /** Jump ramp: a wedge rising along (dirX, dirZ) from 0 to height over len, ending in a sheer lip. */
+  /** Raised flat surface (pavement, plaza, lawn bed): trucks ride on top of it. */
+  addPad(minX, minZ, maxX, maxZ, h) { (this.pads || (this.pads = [])).push({ minX, minZ, maxX, maxZ, h }); }
+  padHeight(x, z) {
+    let h = 0;
+    if (this.pads) for (const p of this.pads) if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && p.h > h) h = p.h;
+    return h;
+  }
   addRamp(cx, cz, yaw, len, width, height) {
     const r = { cx, cz, yaw, ux: Math.sin(yaw), uz: Math.cos(yaw), len, hw: width / 2, height };
     this.ramps.push(r); return r;
@@ -96,8 +122,8 @@ export class StaticWorld {
   }
   /** Elevation of the drivable surface at (x,z). Also returns which overpass + lateral offset. */
   elevation(x, z, out = { h: 0, op: null, lat: 0, along: 0 }) {
-    out.h = 0; out.op = null; out.ramp = false;
-    if (this.ramps.length) { const rh = this.rampHeight(x, z); if (rh > 0) { out.h = rh; out.ramp = true; } }
+    out.h = this.padHeight(x, z); out.op = null; out.ramp = false; out.pad = out.h > 0;
+    if (this.ramps.length) { const rh = this.rampHeight(x, z); if (rh > out.h) { out.h = rh; out.ramp = true; out.pad = false; } }
     for (const op of this.overpasses) {
       const rx = x - op.ax, rz = z - op.az;
       const along = rx * op.ux + rz * op.uz;
@@ -105,7 +131,7 @@ export class StaticWorld {
       const lat = -rx * op.uz + rz * op.ux;
       if (Math.abs(lat) > op.halfWidth + 1.5) continue;
       const h = op.maxH * Math.max(0, Math.min(1, along / op.rampLen, (op.L - along) / op.rampLen));
-      if (h > out.h) { out.h = h; out.op = op; out.lat = lat; out.along = along; }
+      if (h > out.h) { out.h = h; out.op = op; out.lat = lat; out.along = along; out.pad = false; }
     }
     return out;
   }
@@ -129,5 +155,6 @@ export function obbVsObb(a, b) {
     if (depth <= 0) return null;
     if (depth < minDepth) { minDepth = depth; best = dist > 0 ? [-nx, -nz] : [nx, nz]; }
   }
+  if (!best) return null; // degenerate input (NaN)
   return { nx: best[0], nz: best[1], depth: minDepth };
 }

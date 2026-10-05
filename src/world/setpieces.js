@@ -44,24 +44,31 @@ const SHIRT = ['#ff4d57', '#2f9bff', '#3fd46f', '#ffd626', '#b56cff', '#ff7a1a',
 const PANTS = ['#2b3a55', '#3a3f47', '#6b4a2b', '#4f6b8f', '#22304a'];
 const HAIR = ['#2a1b12', '#5a3a1a', '#d9b26a', '#1a1a1a', '#a0522d', '#c0c0c0'];
 /** A chunky cartoon pedestrian (~250 tris) added to builder b at (x, z) facing yaw. */
-/** A pedestrian. look: fixed colours (to rebuild the same person in another pose); pose 'panic' = arms up, mouth open. */
+/**
+ * A pedestrian. look: fixed colours (to rebuild the same person in another pose). pose: 'stand', 'panic' (arms up, mouth
+ * open), 'sit' (on a seat at local y 0.86) or 'sitPanic'.
+ */
 export function person(b, x, z, yaw, rng, scale = 1, look = null, pose = 'stand') {
   const s = scale, L = look || { skin: rng.pick(SKIN), shirt: rng.pick(SHIRT), pants: rng.pick(PANTS), hair: rng.pick(HAIR) };
   const { skin, shirt, pants, hair } = L;
   const at = (lx, ly, lz) => { const c = Math.cos(yaw), sn = Math.sin(yaw); return [x + (lx * c + lz * sn) * s, ly * s, z + (-lx * sn + lz * c) * s]; };
-  for (const lx of [-0.12, 0.12]) { const p = at(lx, 0.42, 0); b.geo(prim('cyl8'), xform(p[0], p[1], p[2], yaw, 0, 0, 0.17 * s, 0.84 * s, 0.17 * s), pants); const f = at(lx, 0.04, 0.05); b.geo(prim('box'), xform(f[0], f[1], f[2], yaw, 0, 0, 0.16 * s, 0.08 * s, 0.26 * s), '#22252b'); }
+  const seated = pose === 'sit' || pose === 'sitPanic';
+  if (seated) {
+    // thighs forward on the seat, shins hanging down
+    for (const lx of [-0.12, 0.12]) { const th = at(lx, 0.86, 0.2); b.geo(prim('cyl8'), xform(th[0], th[1], th[2], yaw, Math.PI / 2, 0, 0.18 * s, 0.46 * s, 0.18 * s), pants); const sh = at(lx, 0.62, 0.42); b.geo(prim('cyl8'), xform(sh[0], sh[1], sh[2], yaw, 0, 0, 0.16 * s, 0.5 * s, 0.16 * s), pants); const f = at(lx, 0.38, 0.47); b.geo(prim('box'), xform(f[0], f[1], f[2], yaw, 0, 0, 0.16 * s, 0.08 * s, 0.26 * s), '#22252b'); }
+  } else for (const lx of [-0.12, 0.12]) { const p = at(lx, 0.42, 0); b.geo(prim('cyl8'), xform(p[0], p[1], p[2], yaw, 0, 0, 0.17 * s, 0.84 * s, 0.17 * s), pants); const f = at(lx, 0.04, 0.05); b.geo(prim('box'), xform(f[0], f[1], f[2], yaw, 0, 0, 0.16 * s, 0.08 * s, 0.26 * s), '#22252b'); }
   const t = at(0, 1.12, 0); b.geo(prim('cyl12'), xform(t[0], t[1], t[2], yaw, 0, 0, 0.46 * s, 0.62 * s, 0.3 * s), shirt);
   const sh = at(0, 1.42, 0); b.geo(prim('sphere10'), xform(sh[0], sh[1], sh[2], yaw, 0, 0, 0.48 * s, 0.2 * s, 0.32 * s), shirt);
-  if (pose === 'panic') {
+  if (pose === 'panic' || pose === 'sitPanic') {
     // arms flung up over the head, hands spread
     for (const lx of [-0.29, 0.29]) { const sg = Math.sign(lx), a = at(lx + sg * 0.13, 1.69, 0.02); b.geo(prim('cyl8'), xform(a[0], a[1], a[2], yaw, 0, -sg * 0.45, 0.12 * s, 0.6 * s, 0.12 * s), shirt); const hnd = at(lx + sg * 0.27, 1.98, 0.02); b.geo(prim('sphere10'), xform(hnd[0], hnd[1], hnd[2], 0, 0, 0, 0.12 * s, 0.12 * s, 0.12 * s), skin); }
     const m = at(0, 1.68, 0.17); b.geo(prim('sphere10'), xform(m[0], m[1], m[2], yaw, 0, 0, 0.12 * s, 0.14 * s, 0.06 * s), '#5a1a1a');
   } else for (const lx of [-0.29, 0.29]) { const a = at(lx, 1.1, 0.04); b.geo(prim('cyl8'), xform(a[0], a[1], a[2], yaw, -0.25, lx > 0 ? -0.12 : 0.12, 0.12 * s, 0.6 * s, 0.12 * s), shirt); const hnd = at(lx * 1.08, 0.78, 0.12); b.geo(prim('sphere10'), xform(hnd[0], hnd[1], hnd[2], 0, 0, 0, 0.11 * s, 0.11 * s, 0.11 * s), skin); }
-  return L;
   const n = at(0, 1.55, 0); b.geo(prim('cyl8'), xform(n[0], n[1], n[2], 0, 0, 0, 0.1 * s, 0.12 * s, 0.1 * s), skin);
   const h = at(0, 1.78, 0); b.geo(prim('sphere10'), xform(h[0], h[1], h[2], yaw, 0, 0, 0.38 * s, 0.4 * s, 0.38 * s), skin);
   const hr = at(0, 1.87, -0.03); b.geo(prim('dome12'), xform(hr[0], hr[1], hr[2], yaw, 0, 0, 0.41 * s, 0.32 * s, 0.41 * s), hair);
   for (const lx of [-0.07, 0.07]) { const e = at(lx, 1.8, 0.18); b.geo(prim('sphere10'), xform(e[0], e[1], e[2], 0, 0, 0, 0.05 * s, 0.06 * s, 0.05 * s), '#1a1a1a'); }
+  return L;
 }
 
 // ------------------------------------------------------------------ futsal arena

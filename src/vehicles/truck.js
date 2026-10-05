@@ -75,29 +75,40 @@ function buildProceduralBody(def, body, root) {
   const wgeo = new THREE.CylinderGeometry(0.55, 0.55, 0.5, 12), wmat = mat(0x1e1e24), hmat = mat(0xcccccc);
   for (const [x, z] of [[-1.15, 1.7], [1.15, 1.7], [-1.15, -1.6], [1.15, -1.6]]) {
     const w = new THREE.Group(); w.position.set(x, 0.55, z);
-    const tyre = new THREE.Mesh(wgeo, wmat); tyre.rotation.z = Math.PI / 2; tyre.castShadow = true; w.add(tyre);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.52, 8), hmat); hub.rotation.z = Math.PI / 2; w.add(hub);
-    root.add(w); wheels.push(w);
+    const spin = new THREE.Group(); w.add(spin);
+    const tyre = new THREE.Mesh(wgeo, wmat); tyre.rotation.z = Math.PI / 2; tyre.castShadow = true; spin.add(tyre);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.52, 8), hmat); hub.rotation.z = Math.PI / 2; spin.add(hub);
+    root.add(w); wheels.push({ pivot: w, spin, front: z > 0, r: 0.55 });
   }
   return wheels;
 }
 
+/**
+ * root (position, heading) -> chassis (ramp slope, tumbles) -> body on suspension + wheels planted on the ground.
+ * userData.wheels: [{ pivot (steers about y), spin (rolls about x), front, r }].
+ */
 export function buildTruckMesh(def) {
   const root = new THREE.Group();
-  const body = new THREE.Group(); root.add(body);
+  const chassis = new THREE.Group(); root.add(chassis);
+  const body = new THREE.Group(); chassis.add(body);
   const model = getTruckModel(def.id);
   let wheels = [];
-  if (model) body.add(model);
-  else wheels = buildProceduralBody(def, body, root);
+  if (model) {
+    body.add(model.body);
+    for (const w of model.wheels) { chassis.add(w.pivot); wheels.push({ pivot: w.pivot, spin: w.pivot.children[0], front: w.front, r: w.r }); }
+    for (const p of Object.values(model.parts)) body.add(p);
+  } else wheels = buildProceduralBody(def, body, chassis);
+  const parts = model ? model.parts : {};
   // status visuals
   const ice = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.8, 6.2), new THREE.MeshLambertMaterial({ color: 0x9ad4ff, transparent: true, opacity: 0.55 })); ice.position.y = 1.9; ice.visible = false; root.add(ice);
   const net = new THREE.Mesh(new THREE.SphereGeometry(3.6, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe9a8, wireframe: true })); net.position.y = 1.8; net.visible = false; root.add(net);
   const shield = new THREE.Mesh(new THREE.SphereGeometry(3.8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.25 })); shield.position.y = 1.8; shield.visible = false; root.add(shield);
-  root.userData = { body, wheels, ice, net, shield };
+  root.userData = { chassis, body, wheels, parts, ice, net, shield };
   return root;
 }
 
 const HW = 1.25, HL = 2.75, CIRC_R = 1.3, CIRC_OFF = 1.55;
+const RAMP_PTS = [[1, 1], [1, -1], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0], [-1, 0], [0.5, 1], [0.5, -1], [-0.5, 1], [-0.5, -1]];
 let nextId = 1;
 
 export class Truck {
@@ -119,7 +130,9 @@ export class Truck {
     this.drifting = false; this.speed = 0; this.fwdSpeed = 0; this.lastImpact = 0; this.airborne = false; this.onOverpass = false;
     this.score = 0; this.alive = true; this.visible = true;
     this.lastHitBy = null; this.lastHitTime = -99;
-    this.wheelSpin = 0; this.steerVis = 0; this.roll = 0; this.pitch = 0; this.bounce = 0;
+    this.wheelDist = 0; this.steerVis = 0; this.slopeVis = 0; this.bounce = 0;
+    // suspension: body heave / pitch / roll springs (slightly under-damped so it bobs on its axles)
+    this.susp = { h: 0, hv: 0, p: 0, pv: 0, r: 0, rv: 0, acc: 0, lastFwd: 0 };
     this.groundH = 0; this.slope = 0; this._contacts = [];
     this.stuckTime = 0; this.events = [];
   }
@@ -128,6 +141,35 @@ export class Truck {
   get obb() { return { x: this.x, z: this.z, cos: Math.cos(this.heading), sin: Math.sin(this.heading), hw: this.hw, hl: this.hl }; }
   place(x, z, heading) { this.x = x; this.z = z; this.heading = heading; this.vx = this.vz = this.vy = 0; this.angVel = 0; this.y = 0; this.syncMesh(0); }
   disabled() { return this.fx.stun > 0 || this.fx.freeze > 0 || this.fx.snare > 0 || this.fx.spin > 0; }
+  /** Footprint vs jump ramps: any corner or side point inside a ramp where its surface is well above the truck gets
+   * pushed out the short way (sideways, or off the high end), and the velocity into the ramp is cancelled. */
+  rampContacts(world, nfX, nfZ, nrX, nrZ) {
+    for (const r of world.ramps) {
+      const dx = this.x - r.cx, dz = this.z - r.cz;
+      if (dx * dx + dz * dz > (r.len / 2 + 6) ** 2) continue;
+      const k = r.height / r.len, ac = dx * r.ux + dz * r.uz + r.len / 2;
+      let best = null;
+      for (const [fo, so] of RAMP_PTS) {
+        const px = this.x + nfX * fo * HL + nrX * so * HW, pz = this.z + nfZ * fo * HL + nrZ * so * HW;
+        const qx = px - r.cx, qz = pz - r.cz, along = qx * r.ux + qz * r.uz + r.len / 2, lat = -qx * r.uz + qz * r.ux;
+        if (along <= 0 || along >= r.len || Math.abs(lat) >= r.hw) continue;
+        // the surface a truck climbing the ramp expects at this point; anything well above it is a wall
+        const expect = this.y + Math.max(0, along - ac) * k;
+        if (r.height * (along / r.len) - expect < 0.6) continue;
+        const side = r.hw - Math.abs(lat), back = r.len - along;
+        const out = side < back ? { nx: -r.uz * (Math.sign(lat) || 1), nz: r.ux * (Math.sign(lat) || 1), d: side } : { nx: r.ux, nz: r.uz, d: back };
+        if (!best || out.d > best.d) best = out;
+      }
+      if (!best) continue;
+      this.x += best.nx * (best.d + 0.02); this.z += best.nz * (best.d + 0.02); this.touching = true;
+      const vn = this.vx * best.nx + this.vz * best.nz;
+      if (vn < 0) {
+        const e = -vn > 4 ? 0.3 : 0;
+        this.vx -= best.nx * vn * (1 + e); this.vz -= best.nz * vn * (1 + e);
+        if (-vn > 4) this.events.push({ type: 'wall', strength: -vn / 10, x: this.x, z: this.z });
+      }
+    }
+  }
   /** shielded trucks (a mode keeping its result on track) only wobble briefly from disabling effects */
   applyEffect(name, dur) { if (this.shielded && name !== 'ram') dur *= 0.15; this.fx[name] = Math.max(this.fx[name], dur); }
   impulse(ix, iz, iy = 0) { this.vx += ix / this.mass; this.vz += iz / this.mass; if (iy > 0) { this.vy += iy / this.mass; this.airborne = true; } }
@@ -197,14 +239,12 @@ export class Truck {
     if (!this.airborne) { this.vx = nfX * fs + nrX * ls; this.vz = nfZ * fs + nrZ * ls; }
     this.x += this.vx * dt; this.z += this.vz * dt;
 
+    // jump ramps are solid from the sides and the high end: push the truck's footprint out of them
+    if (world.ramps.length) this.rampContacts(world, nfX, nfZ, nrX, nrZ);
     // elevation
     const el = world.elevation(this.x, this.z);
-    if (el.ramp && el.h - this.y > 0.7) {
-      // ran into the side or the lip of a jump ramp: it is a solid block from there
-      this.x = this.px; this.z = this.pz; el.h = this.y > 0.05 ? world.rampHeight(this.x, this.z) : 0; if (el.h < 0) el.h = 0; el.ramp = false;
-      const sp = Math.hypot(this.vx, this.vz); this.vx *= -0.3; this.vz *= -0.3;
-      if (sp > 4) this.events.push({ type: 'wall', strength: sp / 10, x: this.x, z: this.z });
-    }
+    if (el.ramp && el.h - this.y > 0.7) { el.h = Math.max(world.padHeight(this.x, this.z), this.y); el.ramp = false; } // still overlapping: stay level until pushed clear
+    if (el.pad && !this.airborne && Math.abs(el.h - (this.groundH ?? 0)) > 0.05) this.groundStep = el.h - this.groundH; // kerb: jolt the springs
     this.groundH = el.h; this.onOverpass = !!el.op && el.h > 0.05;
     if (this.onOverpass) {
       const op = el.op, lim = op.halfWidth - 1.2;
@@ -219,7 +259,9 @@ export class Truck {
     } else this.slope = el.ramp ? Math.atan((this.vyGround || 0) / Math.max(4, Math.abs(this.fwdSpeed))) : 0;
     // vertical speed the ground imparts (ramps): used as launch speed when the ground drops away
     // (on the step the ground drops away the previous, rising value is kept, so it becomes the launch speed)
-    if (!this.airborne && this.groundH > (this.prevGroundH ?? this.groundH) - 0.01) this.vyGround = (this.groundH - (this.prevGroundH ?? this.groundH)) / dt;
+    // (kerbs and plaza edges are small steps, not ramps: they never launch a truck)
+    if (el.pad) this.vyGround = 0;
+    else if (!this.airborne && this.groundH > (this.prevGroundH ?? this.groundH) - 0.01) this.vyGround = (this.groundH - (this.prevGroundH ?? this.groundH)) / dt;
     this.prevGroundH = this.groundH;
     if (this.airborne) {
       this.y += this.vy * dt;
@@ -250,7 +292,7 @@ export class Truck {
           this.vx *= tangentKeep; this.vz *= tangentKeep;
           // a glancing impact twists the truck once; constant pushing must not build up spin
           if (strength > 6 && !wasTouching) this.angVel += clamp((off > 0 ? 1 : -1) * (ct.nx * nrX + ct.nz * nrZ) * strength * 0.08, -2, 2);
-          if (strength > 3 && !wasTouching) { this.lastImpact = Math.max(this.lastImpact, strength); this.events.push({ type: 'wall', strength: strength / 10, x: cx, z: cz }); }
+          if (strength > 3 && !wasTouching) { this.lastImpact = Math.max(this.lastImpact, strength); this.events.push({ type: 'wall', strength: strength / 10, x: cx, z: cz }); this.kick(ct.nx, ct.nz, strength); }
         }
       }
     }
@@ -319,27 +361,48 @@ export class Truck {
     m.position.x = this.rx; m.position.z = this.rz; m.position.y += this.ry - this.y;
     m.rotation.y = this.rh;
   }
+  /** Knock the suspension: a hit along world normal (nx, nz) with the given strength pitches and rolls the body. */
+  kick(nx, nz, strength) {
+    const f = nx * Math.sin(this.heading) + nz * Math.cos(this.heading), l = nx * Math.cos(this.heading) - nz * Math.sin(this.heading), k = Math.min(strength, 25);
+    // (local +x is the truck's left) hit from the front: nose dives; shoved sideways: the body lags and leans away
+    this.susp.pv -= f * k * 0.05; this.susp.rv += l * k * 0.06; this.susp.hv -= k * 0.02;
+    if (this.rigFx) this.rigFx.kick = Math.max(this.rigFx.kick, k);
+  }
   syncMesh(dt, t = 0) {
-    const m = this.mesh, ud = m.userData;
-    this.bounce = Math.max(0, this.bounce - dt * 1.2);
-    m.position.set(this.x, this.y + Math.sin(this.bounce * 30) * this.bounce * 0.3, this.z);
+    const m = this.mesh, ud = m.userData, S = this.susp;
+    m.position.set(this.x, this.y, this.z);
     m.rotation.set(0, this.heading, 0);
-    const latAcc = this.angVel * this.fwdSpeed;
-    this.roll = damp(this.roll, clamp(-latAcc * 0.012, -0.22, 0.22) + (this.fx.drunk > 0 ? Math.sin(t * 6) * 0.12 : 0), 8, dt);
-    this.pitch = damp(this.pitch, -this.slope + (this.control.throttle > 0 ? -0.02 : 0.015) * clamp(this.speed / 10, 0, 1), 8, dt);
+    if (dt > 0) {
+      // drive the springs: squat under acceleration, dive under braking, lean out of corners, compress on landings
+      const acc = (this.fwdSpeed - S.lastFwd) / dt; S.lastFwd = this.fwdSpeed;
+      S.acc = damp(S.acc, clamp(acc, -45, 35), 10, dt);
+      if (this.bounce > 0) { S.hv -= this.bounce * 7; S.pv += (Math.random() - 0.5) * this.bounce * 3; this.bounce = 0; }
+      if (this.groundStep) { S.hv -= this.groundStep * 9; this.groundStep = 0; }
+      const ground = !this.airborne, latAcc = this.angVel * this.fwdSpeed;
+      const tp = ground ? clamp(-S.acc * 0.0042, -0.085, 0.1) : -0.03;
+      const tr = (ground ? clamp(-latAcc * 0.0085, -0.12, 0.12) : 0) + (this.fx.drunk > 0 ? Math.sin(t * 6) * 0.1 : 0);
+      const th = ground ? -0.035 * clamp(this.speed / 30, 0, 1) : 0.09;
+      if (ground && this.speed > 6) S.hv += (Math.random() - 0.5) * this.speed * 0.012; // road texture
+      const K = 150, C = 10.5, step = (x, v, target) => { v += (K * (target - x) - C * v) * dt; return [x + v * dt, v]; };
+      [S.h, S.hv] = step(S.h, S.hv, th); [S.p, S.pv] = step(S.p, S.pv, tp); [S.r, S.rv] = step(S.r, S.rv, tr);
+      S.h = clamp(S.h, -0.14, 0.2); S.p = clamp(S.p, -0.16, 0.16); S.r = clamp(S.r, -0.18, 0.18);
+    }
     let flip = this.flipped ? Math.PI : 0;
     if (this.tumbleT !== undefined && this.tumbleT < this.tumbleDur) {
       this.tumbleT += dt; const k = Math.min(1, this.tumbleT / this.tumbleDur), e = 1 - Math.pow(1 - k, 3);
       flip = this.tumbleDir * e * (this.tumbleKO ? Math.PI : Math.PI * 2);
       if (k >= 1 && this.tumbleKO) this.flipped = true;
     }
-    // roll about the body's centre (1.8 m up) rather than its base
-    const P = 1.8;
-    ud.body.position.set(P * Math.sin(flip), P * (1 - Math.cos(flip)), 0);
-    ud.body.rotation.set(this.pitch, this.fx.ram > 0 ? (t * 14) % (Math.PI * 2) : 0, this.roll + flip);
-    this.wheelSpin += this.fwdSpeed * dt / 0.55;
-    this.steerVis = damp(this.steerVis, this.control.steer * 0.45, 10, dt);
-    for (let i = 0; i < ud.wheels.length; i++) { const w = ud.wheels[i]; w.rotation.y = i < 2 ? this.steerVis : 0; w.children[0].rotation.x = this.wheelSpin; w.children[1].rotation.x = this.wheelSpin; }
+    // chassis: follows the ramp slope; tumbles roll it (wheels and all) about the body's centre, 1.8 m up
+    this.slopeVis = damp(this.slopeVis, -this.slope, 10, dt);
+    const P = 1.8, ch = ud.chassis || ud.body;
+    ch.position.set(P * Math.sin(flip), P * (1 - Math.cos(flip)), 0);
+    ch.rotation.set(this.slopeVis, this.fx.ram > 0 ? (t * 14) % (Math.PI * 2) : 0, flip);
+    if (ud.chassis) { ud.body.position.set(0, S.h, 0); ud.body.rotation.set(S.p, 0, S.r); }
+    // wheels: roll at road speed for their own radius; the front pair steers
+    this.wheelDist += this.fwdSpeed * dt;
+    this.steerVis = damp(this.steerVis, this.control.steer * 0.5 * (1 - clamp(this.speed / 60, 0, 0.5)), 10, dt);
+    for (const w of ud.wheels) { w.pivot.rotation.y = w.front ? this.steerVis : 0; w.spin.rotation.x = this.wheelDist / w.r; }
     ud.ice.visible = this.fx.freeze > 0; ud.net.visible = this.fx.snare > 0; ud.shield.visible = this.fx.ram > 0;
     if (ud.net.visible) ud.net.rotation.y = t * 2;
   }
@@ -366,5 +429,6 @@ export function collideTrucks(a, b) {
   // some spin
   const strength = -vn;
   if (strength > 5) { a.angVel += (Math.random() - 0.5) * strength * 0.06; b.angVel += (Math.random() - 0.5) * strength * 0.06; }
+  if (strength > 2) { a.kick(r.nx, r.nz, strength * mb / tot * 2); b.kick(-r.nx, -r.nz, strength * ma / tot * 2); }
   return { strength, nx: r.nx, nz: r.nz, j };
 }

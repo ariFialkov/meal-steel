@@ -9,6 +9,7 @@ import { RNG } from '../core/rng.js';
 import { fmtMoney } from '../core/math.js';
 import { icon, mountIcons } from './icons.js';
 import { loadTruckModel, loadTruckModels, onTruckModelLoaded, truckModelIds } from '../vehicles/models.js';
+import { createTruckFx } from '../vehicles/truckfx.js';
 
 export class Menu {
   constructor(renderer, audio, { onPlay, envMap }) {
@@ -78,6 +79,7 @@ export class Menu {
     this.truckIdx = ((i % TRUCKS.length) + TRUCKS.length) % TRUCKS.length; localStorage.setItem('ms.truckId', this.truck.id);
     if (this.truckMesh) this.scene.remove(this.truckMesh);
     this.truckMesh = buildTruckMesh(this.truck); this.truckMesh.rotation.y = 0.55;
+    this.truckFx = createTruckFx(null, this.truckMesh, this.truck.id); // idle animations (fries turn, jaw snaps, bar regulars)
     this.scene.add(this.truckMesh); this.refresh();
     if (pop) this.popT = 0.35;
     loadTruckModel(this.truck.id);
@@ -110,6 +112,7 @@ export class Menu {
   }
   update(dt) {
     this.orbit += dt * 0.09; this.updateCamera();
+    this.menuT = (this.menuT || 0) + dt; this.truckFx?.update(dt, this.menuT, null, false);
     if (this.truckMesh) {
       if (this.popT > 0) { this.popT -= dt; const s = 1 + Math.sin(Math.min(1, 1 - this.popT / 0.35) * Math.PI) * 0.12; this.truckMesh.scale.setScalar(s); } else this.truckMesh.scale.setScalar(1);
     }
