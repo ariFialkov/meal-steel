@@ -128,7 +128,8 @@ export class Truck {
   get obb() { return { x: this.x, z: this.z, cos: Math.cos(this.heading), sin: Math.sin(this.heading), hw: this.hw, hl: this.hl }; }
   place(x, z, heading) { this.x = x; this.z = z; this.heading = heading; this.vx = this.vz = this.vy = 0; this.angVel = 0; this.y = 0; this.syncMesh(0); }
   disabled() { return this.fx.stun > 0 || this.fx.freeze > 0 || this.fx.snare > 0 || this.fx.spin > 0; }
-  applyEffect(name, dur) { this.fx[name] = Math.max(this.fx[name], dur); }
+  /** shielded trucks (a mode keeping its result on track) only wobble briefly from disabling effects */
+  applyEffect(name, dur) { if (this.shielded && name !== 'ram') dur *= 0.15; this.fx[name] = Math.max(this.fx[name], dur); }
   impulse(ix, iz, iy = 0) { this.vx += ix / this.mass; this.vz += iz / this.mass; if (iy > 0) { this.vy += iy / this.mass; this.airborne = true; } }
 
   update(dt, world, t) {

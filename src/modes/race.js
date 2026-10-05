@@ -107,7 +107,10 @@ export class RaceMode extends Mode {
       if (b.wideUntil && t > b.wideUntil) { b.laneOff = this.rng.range(-2.2, 2.2); b.wideUntil = 0; }
       // limiter only when this climber cannot make it at the pace the rail can give it
       const canDo = b.kinematicStep ? (b.railV ?? 0) * 1.25 : b._baseMax * 1.3;
-      if (ahead && b.correcting && !this.playerFinished && b.trackS < p.trackS + 4 && pRemain < 200 && (needSpeed > canDo || pRemain < 45)) limiterNeeded = true;
+      const bTime = (track.finishS + 5 - b.trackS) / Math.max(b.speed, 5); // arrival at its current pace
+      if (ahead && b.correcting && !this.playerFinished && b.trackS < p.trackS + 8 && pRemain < 220 && (needSpeed > canDo || (pRemain < 140 && bTime > pTime - 0.35))) limiterNeeded = true;
+      // a climber shrugs off spin-outs and freezes from other trucks' specials while it makes its move
+      b.shielded = ahead && b.correcting && !this.playerFinished;
       b.dbg = { err: Math.round(err), sf: +speedFactor.toFixed(2), boost: +b.boostMul.toFixed(2), corr: !!b.correcting };
       this.rails(b, dt);
       // target point on the spline with a lane offset
@@ -135,9 +138,9 @@ export class RaceMode extends Mode {
     }
     // last resort: if an ahead bot still has not got past near the end, the player's top speed sags a little
     if (p._baseMax === undefined) p._baseMax = p.maxSpeed;
-    const want = limiterNeeded ? 1 - 0.5 * clamp(1 - pRemain / 200, 0, 1) : 1;
+    const want = limiterNeeded ? 1 - 0.45 * clamp(1 - pRemain / 220, 0, 1) - (pRemain < 60 ? 0.1 : 0) : 1;
     if (limiterNeeded) this.limiterUsed += dt;
-    this.paceMul = damp(this.paceMul, want, 2.5, dt);
+    this.paceMul = damp(this.paceMul, want, 3.5, dt);
     p.maxSpeed = p._baseMax * this.paceMul;
 
     // finishes
