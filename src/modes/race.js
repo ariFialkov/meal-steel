@@ -144,7 +144,7 @@ export class RaceMode extends Mode {
       // closing on the player late: pass on whichever side has more road, right out at the edge of the usable lane
       if (ahead && blend > 0.3 && gap < 3 && gap > -30 && !this.playerFinished && b.laneLo !== undefined) {
         const pl = p.trackLat ?? 0, roomHi = b.laneHi - pl, roomLo = pl - b.laneLo;
-        preferred = roomHi >= roomLo ? b.laneHi : b.laneLo;
+        preferred = roomHi >= roomLo ? b.laneHi - 0.3 : b.laneLo + 0.3;
       }
       b.passing = ahead && blend > 0.3 && gap < 3 && gap > -30 && !this.playerFinished;
       const plan = this.planLane(b, preferred, dt);
@@ -237,8 +237,8 @@ export class RaceMode extends Mode {
   /** lateral range a truck's centre can use over the next stretch of road */
   laneRange(b) {
     const i0 = b.trackIdx ?? 0, R = this.room;
-    let lo = -4.2, hi = 4.2;
-    for (let i = Math.max(0, i0 - 2); i < Math.min(R.length, i0 + 16); i++) { lo = Math.max(lo, -(R[i][0] - 1.8)); hi = Math.min(hi, R[i][1] - 1.8); }
+    let lo = -3.9, hi = 3.9;
+    for (let i = Math.max(0, i0 - 2); i < Math.min(R.length, i0 + 16); i++) { lo = Math.max(lo, -(R[i][0] - 2.1)); hi = Math.min(hi, R[i][1] - 2.1); }
     if (lo > hi) lo = hi = (lo + hi) / 2;
     return [lo, hi];
   }
