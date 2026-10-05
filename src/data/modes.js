@@ -75,7 +75,7 @@ export function rollGameParams(modeId, rng) {
   if (m.time) time = m.time.fixed ?? rng.pick(m.time.options);
   const winners = rng.pick(m.winners);
   const neighbourhood = rng.pick(NEIGHBOURHOODS);
-  const weather = rng.pick(WEATHERS);
+  const weather = (typeof window !== 'undefined' && window.__forceWeather && WEATHERS.find((w) => w.name === window.__forceWeather)) || rng.pick(WEATHERS);
   let rounds = null, spotSchedule = null;
   if (modeId === 'chairs') {
     // 14 trucks: spots left after each round, ending with a single winner

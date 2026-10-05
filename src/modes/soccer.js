@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Mode } from './base.js';
 import { BotDriver } from '../ai/bot.js';
+import { buildArena as buildArenaVisuals, soccerBall } from '../world/setpieces.js';
 import { clamp, fmtTime } from '../core/math.js';
 
 const BALL_R = 1.6;
@@ -32,49 +33,25 @@ export class SoccerMode extends Mode {
     this.schedule = times.map((t, i) => ({ t, team: teamsSeq[i], done: false }));
     this.winner = winner;
     this.ball = { x: 0, y: BALL_R, z: 0, vx: 0, vy: 0, vz: 0, lastTouch: null, lastTouchT: -9 };
-    const bm = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 16, 12), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-    const patches = new THREE.Mesh(new THREE.IcosahedronGeometry(BALL_R * 1.01, 0), new THREE.MeshLambertMaterial({ color: 0x222222, wireframe: true }));
-    bm.add(patches); bm.castShadow = true; g.scene.add(bm); this.ballMesh = bm;
+    const bm = soccerBall(BALL_R); g.scene.add(bm); this.ballMesh = bm;
     this.kickoff(1.5);
     this.celebrate = 0; this.stoppage = false; this.lastShotDenied = -9;
     this.teamColors = { 1: '#3aa9ff', 2: '#ef3b4b' };
   }
   buildArena() {
-    const g = this.game, A = this.A, world = g.world, scene = g.scene;
-    const wallH = A.wallH, T = 1.0;
-    const mat1 = new THREE.MeshLambertMaterial({ color: 0x3aa9ff, transparent: true, opacity: 0.55 });
-    const mat2 = new THREE.MeshLambertMaterial({ color: 0xef3b4b, transparent: true, opacity: 0.55 });
-    const matN = new THREE.MeshLambertMaterial({ color: 0xf4f4f4, transparent: true, opacity: 0.5 });
-    const box = (x0, z0, x1, z1, h, mat, kind = 'board') => {
-      world.addAABB(x0, z0, x1, z1, kind, h);
-      const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, h, z1 - z0), mat); m.position.set((x0 + x1) / 2, h / 2, (z0 + z1) / 2); m.castShadow = true; scene.add(m);
-    };
-    // long side walls
-    box(A.minX - T, A.minZ - A.goalDepth - T, A.minX, A.maxZ + A.goalDepth + T, wallH, matN);
-    box(A.maxX, A.minZ - A.goalDepth - T, A.maxX + T, A.maxZ + A.goalDepth + T, wallH, matN);
-    // end walls with goal gaps; team 1 defends minZ (blue end), team 2 defends maxZ (red end)
-    for (const [z, sgn, mat] of [[A.minZ, -1, mat1], [A.maxZ, 1, mat2]]) {
+    const g = this.game, A = this.A, world = g.world, T = 1.0, wallH = A.wallH;
+    const box = (x0, z0, x1, z1, h, kind = 'board') => world.addAABB(x0, z0, x1, z1, kind, h);
+    box(A.minX - T, A.minZ - A.goalDepth - T, A.minX, A.maxZ + A.goalDepth + T, wallH);
+    box(A.maxX, A.minZ - A.goalDepth - T, A.maxX + T, A.maxZ + A.goalDepth + T, wallH);
+    for (const [z, sgn] of [[A.minZ, -1], [A.maxZ, 1]]) {
       const z0 = sgn < 0 ? z - T : z, z1 = sgn < 0 ? z : z + T;
-      box(A.minX - T, z0, -A.goalHalf, z1, wallH, mat);
-      box(A.goalHalf, z0, A.maxX + T, z1, wallH, mat);
-      // goal box
+      box(A.minX - T, z0, -A.goalHalf, z1, wallH); box(A.goalHalf, z0, A.maxX + T, z1, wallH);
       const back0 = sgn < 0 ? z - A.goalDepth - T : z + A.goalDepth, back1 = back0 + T;
-      box(-A.goalHalf - T, back0, A.goalHalf + T, back1, 7, matN, 'net');
+      box(-A.goalHalf - T, back0, A.goalHalf + T, back1, 7, 'net');
       const zi0 = Math.min(z, back0), zi1 = Math.max(z1, back1);
-      box(-A.goalHalf - T, zi0, -A.goalHalf, zi1, 7, matN, 'net');
-      box(A.goalHalf, zi0, A.goalHalf + T, zi1, 7, matN, 'net');
-      // crossbar + net roof visual
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(A.goalHalf * 2 + 2, 0.5, 0.5), new THREE.MeshLambertMaterial({ color: 0xffffff })); bar.position.set(0, 6.2, z); scene.add(bar);
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(A.goalHalf * 2 + 2, 0.2, A.goalDepth), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 })); roof.position.set(0, 6.4, z + sgn * A.goalDepth / 2); scene.add(roof);
+      box(-A.goalHalf - T, zi0, -A.goalHalf, zi1, 7, 'net'); box(A.goalHalf, zi0, A.goalHalf + T, zi1, 7, 'net');
     }
-    // pitch paint
-    const paint = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const line = (w, d, x, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), paint); m.position.set(x, 0.23, z); scene.add(m); };
-    line(A.maxX - A.minX, 0.4, 0, 0);
-    const circle = new THREE.Mesh(new THREE.RingGeometry(11.5, 12, 48), paint); circle.rotation.x = -Math.PI / 2; circle.position.y = 0.23; scene.add(circle);
-    for (const [z, sgn] of [[A.minZ, 1], [A.maxZ, -1]]) { line(A.goalHalf * 2 + 16, 0.4, 0, z + sgn * 16); line(0.4, 16, -A.goalHalf - 8, z + sgn * 8); line(0.4, 16, A.goalHalf + 8, z + sgn * 8); }
-    const turf = new THREE.Mesh(new THREE.BoxGeometry(A.maxX - A.minX, 0.05, A.maxZ - A.minZ), new THREE.MeshLambertMaterial({ color: 0x4e8a3a })); turf.position.y = 0.2; turf.receiveShadow = true; scene.add(turf);
-    for (let i = 0; i < 8; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(A.maxX - A.minX, 0.05, (A.maxZ - A.minZ) / 16), new THREE.MeshLambertMaterial({ color: 0x56963f })); s.position.set(0, 0.21, A.minZ + (A.maxZ - A.minZ) / 16 * (i * 2 + 0.5)); scene.add(s); }
+    buildArenaVisuals(g.scene, A);
   }
   kickoff(delay) {
     const A = this.A;

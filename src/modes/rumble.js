@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Mode } from './base.js';
 import { scatterOpenProps } from '../world/city.js';
 import { BotDriver } from '../ai/bot.js';
+import { servingSpot, ringMarker, coinMesh, couponMesh } from '../world/setpieces.js';
 import { clamp, fmtTime, ordinal, noise1 } from '../core/math.js';
 
 export class RumbleMode extends Mode {
@@ -11,8 +12,7 @@ export class RumbleMode extends Mode {
     this.ring = plan.ring; this.timeLeft = g.params.time; this.total = g.params.time;
     scatterOpenProps(g.props, plan, rng, 44);
     // ring marker on the ground
-    const ringMesh = new THREE.Mesh(new THREE.RingGeometry(this.ring.r - 0.6, this.ring.r + 0.6, 64), new THREE.MeshBasicMaterial({ color: 0xffb02a, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
-    ringMesh.rotation.x = -Math.PI / 2; ringMesh.position.set(this.ring.x, 0.25, this.ring.z); g.scene.add(ringMesh);
+    g.scene.add(ringMarker(this.ring.x, this.ring.z, this.ring.r));
     // trucks in a ring facing centre
     const n = this.trucks.length, order = rng.shuffle(this.trucks);
     order.forEach((tr, i) => { const a = (i / n) * Math.PI * 2; tr.place(this.ring.x + Math.cos(a) * 34, this.ring.z + Math.sin(a) * 34, Math.atan2(-Math.cos(a), -Math.sin(a))); tr.score = 0; tr.outOfRing = false; tr.outTime = 0; });
@@ -39,11 +39,7 @@ export class RumbleMode extends Mode {
     let a, x, z, tries = 0;
     do { a = rng.range(0, Math.PI * 2); x = R.x + Math.cos(a) * (R.r - 7); z = R.z + Math.sin(a) * (R.r - 7); tries++; }
     while (tries < 20 && this.spots.some((s) => Math.hypot(s.x - x, s.z - z) < 25));
-    const grp = new THREE.Group();
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(5, 0.2, 8), new THREE.MeshLambertMaterial({ color: 0x3aa9ff })); pad.position.y = 0.2; grp.add(pad);
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 0.2), new THREE.MeshLambertMaterial({ color: 0xffb02a })); sign.position.set(0, 3.2, -4.3); grp.add(sign);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3, 6), new THREE.MeshLambertMaterial({ color: 0x888888 })); pole.position.set(0, 1.5, -4.3); grp.add(pole);
-    for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.8), new THREE.MeshLambertMaterial({ color: [0xff7eb6, 0x3ad17c, 0xffd166, 0x9b4dca][k] })); c.position.set(-3.5 + (k % 2) * 7, 0.8, -2 + Math.floor(k / 2) * 4); grp.add(c); }
+    const { group: grp, pad } = servingSpot(rng);
     grp.position.set(x, 0, z); grp.rotation.y = a + Math.PI / 2; grp.scale.setScalar(0.01);
     this.spotGroup.add(grp);
     this.spots.push({ x, z, mesh: grp, life: this.rng.range(18, 26), age: 0, occupant: null, occupiedT: 0, served: 0, pad });
@@ -51,8 +47,7 @@ export class RumbleMode extends Mode {
   spawnItem() {
     const rng = this.rng, R = this.ring, a = rng.range(0, Math.PI * 2), r = rng.range(8, R.r - 10);
     const coupon = rng.chance(0.3);
-    const mesh = coupon ? new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 0.1), new THREE.MeshLambertMaterial({ color: 0x3ad17c })) : new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.2, 12), new THREE.MeshLambertMaterial({ color: 0xffd166 }));
-    if (!coupon) mesh.rotation.x = Math.PI / 2;
+    const mesh = coupon ? couponMesh() : coinMesh();
     mesh.position.set(R.x + Math.cos(a) * r, 1.4, R.z + Math.sin(a) * r);
     this.game.scene.add(mesh);
     this.items.push({ x: mesh.position.x, z: mesh.position.z, mesh, coupon, value: coupon ? 30 : 15 });
@@ -118,7 +113,7 @@ export class RumbleMode extends Mode {
     this.itemTimer += dt;
     if (this.itemTimer > 4 && this.items.length < 6) { this.itemTimer = 0; this.spawnItem(); }
     for (let i = this.items.length - 1; i >= 0; i--) {
-      const it = this.items[i]; it.mesh.rotation.z += dt * 2; it.mesh.position.y = 1.4 + Math.sin(t * 3 + i) * 0.3;
+      const it = this.items[i]; it.mesh.rotation.y += dt * 2.4; it.mesh.position.y = 1.4 + Math.sin(t * 3 + i) * 0.3;
       for (const tr of this.trucks) {
         if (Math.hypot(tr.x - it.x, tr.z - it.z) < 2.8) { this.award(tr, it.value, it.coupon ? 'COUPON' : 'COIN'); if (tr.isPlayer) g.audio.coin(); g.fx.sparks(it.x, 1.5, it.z, 10, it.coupon ? 0x3ad17c : 0xffd166); g.scene.remove(it.mesh); this.items.splice(i, 1); break; }
       }

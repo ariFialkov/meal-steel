@@ -11,6 +11,7 @@ export class Particles {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);
     this.mesh.frustumCulled = false; this.mesh.castShadow = false;
+    this.mesh.count = 0; // nothing alive yet (otherwise every instance draws at the origin until the first update)
     scene.add(this.mesh);
     this.ps = []; for (let i = 0; i < MAX; i++) this.ps.push({ alive: false });
     this.cursor = 0;

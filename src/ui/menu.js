@@ -106,5 +106,5 @@ export class Menu {
     }
     this.city.props.update(dt);
   }
-  render() { this.renderer.render(this.scene, this.camera); }
+  render() { this.city.props.cull(this.camera); this.renderer.render(this.scene, this.camera); }
 }

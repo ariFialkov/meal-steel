@@ -99,14 +99,36 @@ checkRefill();
 document.getElementById('menuBtn').addEventListener('click', checkRefill);
 
 let prev = performance.now();
+// Adaptive quality: if frames run slow for a couple of seconds, lower the render resolution step by step,
+// then drop shadows as a last resort. Never raises quality again within a session (avoids oscillating).
+const MAX_PR = renderer.getPixelRatio(), MIN_PR = Math.min(MAX_PR, 0.65);
+const quality = { win: 0, frames: 0, slow: 0, level: 0 };
+function adaptQuality(dtMs) {
+  if (document.hidden) return;
+  quality.win += dtMs; quality.frames++;
+  if (quality.win < 2000) return;
+  const avg = quality.win / quality.frames; quality.win = 0; quality.frames = 0;
+  quality.slow = avg > 30 ? quality.slow + 1 : 0;   // below ~33 fps for two windows in a row
+  if (quality.slow < 2) return;
+  quality.slow = 0;
+  const pr = renderer.getPixelRatio();
+  if (pr > MIN_PR + 0.01) { renderer.setPixelRatio(Math.max(MIN_PR, pr * 0.8)); resize(); quality.level++; }
+  else if (renderer.shadowMap.enabled) {
+    renderer.shadowMap.enabled = false; quality.level++;
+    const scenes = [menu.scene, game?.scene].filter(Boolean);
+    for (const sc of scenes) sc.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+  }
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
+  const raw = now - prev, dt = Math.min(0.1, raw / 1000); prev = now;
+  if (state === 'menu' || state === 'game') adaptQuality(Math.min(raw, 1000));
   if (state === 'menu' || state === 'pregame') { menu.update(dt); menu.render(); }
   else if (game) { game.update(dt); game.render(); }
 }
 requestAnimationFrame(frame);
 
 // debug / automation hook (harmless in production)
-window.__ms = { get game() { return game; }, get state() { return state; }, startMatch, get bank() { return bank; }, menu, input };
+window.__ms = { quality, get game() { return game; }, get state() { return state; }, startMatch, get bank() { return bank; }, menu, input };
 window.__TRUCKS = TRUCKS;

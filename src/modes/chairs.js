@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Mode } from './base.js';
 import { scatterOpenProps } from '../world/city.js';
 import { BotDriver } from '../ai/bot.js';
+import { parkingBay } from '../world/setpieces.js';
 import { clamp, noise1 } from '../core/math.js';
 import { icon } from '../ui/icons.js';
 
@@ -29,11 +30,7 @@ export class ChairsMode extends Mode {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + this.round * 0.3;
       const x = this.ring.x + Math.cos(a) * R, z = this.ring.z + Math.sin(a) * R;
-      const grp = new THREE.Group();
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 7.6), new THREE.MeshLambertMaterial({ color: 0xffffff })); pad.position.y = 0.26; grp.add(pad);
-      const fill = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.12, 7.0), new THREE.MeshLambertMaterial({ color: 0x3aa9ff })); fill.position.y = 0.3; grp.add(fill);
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3, 6), new THREE.MeshLambertMaterial({ color: 0x888 })); post.position.set(0, 1.5, -4.2); grp.add(post);
-      const sign = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 0.15), new THREE.MeshLambertMaterial({ color: 0xffb02a })); sign.position.set(0, 3.3, -4.2); grp.add(sign);
+      const { group: grp, fill } = parkingBay();
       grp.position.set(x, 0, z); grp.rotation.y = a + Math.PI / 2;
       this.spotGroup.add(grp);
       this.spots.push({ x, z, mesh: grp, fill, securedBy: null, i });

@@ -43,6 +43,18 @@ node scripts/import-trucks.mjs <folder-of-truck-folders> [--only <truck id>]
 
 The script turns each export into a compact GLB (about 450 KB): front rotated to face forward, scaled to the game's truck footprint, textures resized to WebP, roughness and metallic packed into one map. Per-truck rotation or size overrides go in `scripts/truck-models.json`. Models are fetched on demand and cached by the service worker.
 
+## City and props
+
+Every map is generated fresh from the match seed, using the same art direction as the truck models:
+
+- **Painted textures** (`src/world/citytex.js`): brick, stucco, siding, concrete and glass façades, storefronts, roofs, asphalt, paving, grass and awnings are painted on canvas once per session, each with a normal map for surface depth, a roughness map and a night-glow layer for lit windows and shop interiors. Walls are tinted per building, so one set of textures covers every neighbourhood palette.
+- **Buildings** (`src/world/buildings.js`): style-driven masses with storefronts, shop signs and awnings, string courses, cornices and parapets, fire escapes, balconies, setback towers, pitched tile roofs, water towers, AC units, vents, stair bulkheads and rooftop billboards.
+- **Streets** (`src/world/city.js`): textured asphalt, kerbs, storm drains, zebra crossings, manholes and patterned plazas.
+- **Props** (`src/world/props.js`): every street prop is a detailed merged model (hydrants, mailboxes, lamp posts, benches, bins, trees, carts, planters, statue, fountain, cell tower), drawn with instancing.
+- **Set pieces** (`src/world/setpieces.js`): the futsal arena (striped turf, full markings, sponsor boards, glass, goals with nets), Rumble serving spots with queueing customers, Musical Trucks parking bays, and truss start and finish gantries.
+
+City geometry is merged into a few meshes per material and split into chunks, so the camera and shadow passes skip what they cannot see; props are culled per frame. If frames run slow, the game lowers its render resolution step by step and finally turns off shadows.
+
 ## Deployment
 
 Every push to `main` or a `claude/**` branch runs `.github/workflows/pages.yml`, which builds the game and publishes `dist/` to the `gh-pages` branch, served by GitHub Pages at the URL above.

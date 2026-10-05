@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { roadX, roadZ, P_ROAD, PITCH } from './layouts.js';
+import { getCityTextures, TILE } from './citytex.js';
+import { gantry as makeGantry, planarUV } from './setpieces.js';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -212,7 +214,13 @@ function checkerTexture() {
 export function buildTrackVisuals(scene, track, world, props, rng) {
   const group = new THREE.Group();
   const S = track.samples;
-  const geos = [ribbon(S, -4.8, 4.8, 0x3a3f4b, 0.05)];
+  const surf = ribbon(S, -4.8, 4.8, 0xffffff, 0.05), sp = surf.attributes.position, suv = new Float32Array(sp.count * 2);
+  for (let i = 0; i < sp.count; i++) { suv[i * 2] = sp.getX(i) / TILE.asphalt[0]; suv[i * 2 + 1] = sp.getZ(i) / TILE.asphalt[0]; }
+  surf.setAttribute('uv', new THREE.BufferAttribute(suv, 2));
+  const at = getCityTextures().asphalt;
+  const surfMesh = new THREE.Mesh(surf, new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, color: 0x9da3b4, roughness: 0.85 }));
+  surfMesh.receiveShadow = true; surfMesh.userData.keepTextures = true; group.add(surfMesh);
+  const geos = [];
   // kerbs alternate red/white every ~6 samples
   for (let i = 0; i < S.length - 1; i += 4) {
     const hex = ((i / 4) % 2) ? 0xd62828 : 0xf4f4f4;
@@ -223,18 +231,14 @@ export function buildTrackVisuals(scene, track, world, props, rng) {
     const p = S[i], g = new THREE.PlaneGeometry(2.2, 1.2); g.rotateX(-Math.PI / 2); g.rotateY(Math.atan2(p.tx, p.tz)); g.translate(p.x, p.y + 0.08, p.z);
     geos.push(colorGeo(g, 0xffd166));
   }
-  const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshLambertMaterial({ vertexColors: true })); mesh.receiveShadow = true; group.add(mesh);
+  const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1 })); mesh.receiveShadow = true; group.add(mesh);
 
   // start & finish
   const line = (sIdx, label, bg) => {
     const p = S[sIdx], ang = Math.atan2(p.tx, p.tz);
-    const l = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.4), new THREE.MeshLambertMaterial({ map: checkerTexture() }));
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.4), new THREE.MeshStandardMaterial({ map: checkerTexture(), roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 }));
     l.rotation.x = -Math.PI / 2; l.rotation.z = -ang; l.position.set(p.x, p.y + 0.1, p.z); l.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), 0); group.add(l);
-    const gantry = new THREE.Group(); gantry.position.set(p.x, p.y, p.z); gantry.rotation.y = ang;
-    const pm = new THREE.MeshLambertMaterial({ color: 0xdddddd });
-    for (const sx of [-6.5, 6.5]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 7.5, 0.6), pm); post.position.set(sx, 3.75, 0); post.castShadow = true; gantry.add(post); }
-    const banner = new THREE.Mesh(new THREE.BoxGeometry(13.6, 2.2, 0.5), [pm, pm, pm, pm, new THREE.MeshLambertMaterial({ map: textTexture(label, bg, '#fff6e8') }), new THREE.MeshLambertMaterial({ map: textTexture(label, bg, '#fff6e8') })]);
-    banner.position.set(0, 7.2, 0); banner.castShadow = true; gantry.add(banner);
+    const gantry = makeGantry(label, bg); gantry.position.set(p.x, p.y, p.z); gantry.rotation.y = ang;
     group.add(gantry);
     world.addAABB(p.x + Math.cos(ang) * 6.5 - 0.5, p.z - Math.sin(ang) * 6.5 - 0.5, p.x + Math.cos(ang) * 6.5 + 0.5, p.z - Math.sin(ang) * 6.5 + 0.5, 'post', 8);
     world.addAABB(p.x - Math.cos(ang) * 6.5 - 0.5, p.z + Math.sin(ang) * 6.5 - 0.5, p.x - Math.cos(ang) * 6.5 + 0.5, p.z + Math.sin(ang) * 6.5 + 0.5, 'post', 8);
@@ -247,8 +251,13 @@ export function buildTrackVisuals(scene, track, world, props, rng) {
   // roundabout island
   const rb = track.features.roundabout;
   if (rb) {
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(rb.r + 9, rb.r + 9, 0.18, 32), new THREE.MeshLambertMaterial({ color: 0x9c8f86 })); disc.position.set(rb.x, 0.09, rb.z); disc.receiveShadow = true; group.add(disc);
-    const island = new THREE.Mesh(new THREE.CylinderGeometry(rb.r - 6, rb.r - 6, 0.5, 24), new THREE.MeshLambertMaterial({ color: 0x5c9e4a })); island.position.set(rb.x, 0.25, rb.z); group.add(island);
+    const ct = getCityTextures();
+    const dg = new THREE.CylinderGeometry(rb.r + 9, rb.r + 9, 0.18, 48); dg.translate(rb.x, 0.09, rb.z); planarUV(dg, TILE.asphalt[0]);
+    const disc = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({ map: ct.asphalt.map, normalMap: ct.asphalt.normalMap, color: 0xb0b4c2, roughness: 0.85 })); disc.receiveShadow = true; disc.userData.keepTextures = true; group.add(disc);
+    const kg = new THREE.CylinderGeometry(rb.r - 5.6, rb.r - 5.4, 0.42, 48); kg.translate(rb.x, 0.21, rb.z);
+    const kerb = new THREE.Mesh(kg, new THREE.MeshStandardMaterial({ color: 0xd8d4cb, roughness: 0.8 })); kerb.receiveShadow = true; kerb.castShadow = true; group.add(kerb);
+    const ig = new THREE.CylinderGeometry(rb.r - 6, rb.r - 6, 0.5, 48); ig.translate(rb.x, 0.25, rb.z); planarUV(ig, TILE.grass[0]);
+    const island = new THREE.Mesh(ig, new THREE.MeshStandardMaterial({ map: ct.grass.map, normalMap: ct.grass.normalMap, roughness: 0.95 })); island.receiveShadow = true; island.userData.keepTextures = true; group.add(island);
     props.add('fountain', rb.x, rb.z, 0, 1);
     for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; props.add('tree', rb.x + Math.cos(a) * (rb.r - 7.5), rb.z + Math.sin(a) * (rb.r - 7.5), a, 1); }
     // island collider ring approximated by boxes
@@ -264,14 +273,14 @@ export function buildTrackVisuals(scene, track, world, props, rng) {
       if (h1 < 0.05 && h2 < 0.05) continue;
       const cx = o.ax + o.ux * (a + 1), cz = o.az + o.uz * (a + 1);
       const g = new THREE.BoxGeometry(o.halfWidth * 2 + 1.2, 0.7, 2.4); g.rotateX(-Math.atan2(h2 - h1, 2)); g.rotateY(Math.atan2(o.ux, o.uz)); g.translate(cx, (h1 + h2) / 2 - 0.4, cz);
-      deck.push(colorGeo(g, 0x8a8f99));
+      deck.push(colorGeo(g, 0xc2bdb4));
       for (const side of [-1, 1]) {
         const r = new THREE.BoxGeometry(0.35, 1.1, 2.4); r.rotateX(-Math.atan2(h2 - h1, 2)); r.rotateY(Math.atan2(o.ux, o.uz));
         r.translate(cx - o.uz * side * (o.halfWidth + 0.4), (h1 + h2) / 2 + 0.5, cz + o.ux * side * (o.halfWidth + 0.4));
-        rail.push(colorGeo(r, 0xffd166));
+        rail.push(colorGeo(r, side > 0 ? 0xff4d57 : 0xffd626));
       }
     }
-    const dm = new THREE.Mesh(mergeGeometries([...deck, ...rail]), new THREE.MeshLambertMaterial({ vertexColors: true })); dm.castShadow = true; dm.receiveShadow = true; group.add(dm);
+    const dm = new THREE.Mesh(mergeGeometries([...deck, ...rail]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 })); dm.castShadow = true; dm.receiveShadow = true; group.add(dm);
     // pillars where the deck is high, avoiding intersections
     for (let a = 8; a < o.L - 8; a += 14) {
       if (world.overpassHeightAlong(o, a) < 5.4) continue;

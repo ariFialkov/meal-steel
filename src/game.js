@@ -230,12 +230,22 @@ export class Game {
     if (this.headlight) { this.headlight.position.set(this.player.x + this.player.fwdX * 2.5, this.player.y + 1.4, this.player.z + this.player.fwdZ * 2.5); this.headlight.target.position.set(this.player.x + this.player.fwdX * 30, 0, this.player.z + this.player.fwdZ * 30); this.headlight.target.updateMatrixWorld(); }
   }
 
-  render() { this.renderer.render(this.scene, this.camera); }
+  render() { this.props.cull(this.camera); this.renderer.render(this.scene, this.camera); }
 
   dispose() {
     this.audio.stopEngine(); this.audio.stopMusic();
     this.hud.hide();
-    this.scene.traverse((o) => { if (o.userData.shared) return; if (o.geometry) o.geometry.dispose(); if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) { m.map?.dispose?.(); m.emissiveMap?.dispose?.(); m.dispose(); } } });
+    // shared = truck model library; keepGeometry = cached prop models; keepTextures = city textures painted once per session
+    this.scene.traverse((o) => {
+      if (o.userData.shared) return;
+      if (o.isInstancedMesh) o.dispose();
+      if (o.geometry && !o.userData.keepGeometry) o.geometry.dispose();
+      if (!o.material) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!o.userData.keepTextures) { m.map?.dispose?.(); m.emissiveMap?.dispose?.(); }
+        m.dispose();
+      }
+    });
     this.scene.clear();
   }
 }
