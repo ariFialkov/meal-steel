@@ -62,10 +62,11 @@ export class Menu {
     this.orbit = 0.8; this.truckMesh = null;
     this.updateCamera();
   }
+  /** Low hero shot: close to the truck, camera near the ground looking up at it, slow orbit. */
   updateCamera() {
-    const r = 28, h = 10.5;
+    const r = this.camR || 11.5, h = 1.15 + Math.sin(this.orbit * 0.7) * 0.15;
     this.camera.position.set(Math.sin(this.orbit) * r, h, Math.cos(this.orbit) * r);
-    this.camera.lookAt(0, 2.4, 0);
+    this.camera.lookAt(0, 2.25, 0);
   }
   placeNeighbour(n) {
     if (n.mesh) this.scene.remove(n.mesh);
@@ -98,9 +99,17 @@ export class Menu {
   play() { if (this.bank < this.bet) return; this.audio.lock(); this.onPlay(this.truck, this.modeId, this.bet); }
   show() { this.el.classList.remove('hidden'); this.refresh(); }
   hide() { this.el.classList.add('hidden'); }
-  resize(w, h) { this.camera.aspect = w / h; this.camera.fov = h < 480 ? 34 : 30; this.camera.updateProjectionMatrix(); }
+  resize(w, h) {
+    const a = w / h, cam = this.camera;
+    cam.aspect = a; cam.fov = h < 480 ? 36 : 32;
+    // pull back a little on narrow screens so the whole truck still fits
+    this.camR = a < 1.2 ? 17 : a < 1.5 ? 13.5 : h < 480 ? 9.6 : 11.5;
+    // lens shift: the truck sits a little above centre (clear of the bottom UI) without tilting the camera down
+    cam.setViewOffset(w, h, 0, h * (h < 480 ? 0.2 : 0.09), w, h);
+    cam.updateProjectionMatrix(); this.updateCamera();
+  }
   update(dt) {
-    this.orbit += dt * 0.11; this.updateCamera();
+    this.orbit += dt * 0.09; this.updateCamera();
     if (this.truckMesh) {
       if (this.popT > 0) { this.popT -= dt; const s = 1 + Math.sin(Math.min(1, 1 - this.popT / 0.35) * Math.PI) * 0.12; this.truckMesh.scale.setScalar(s); } else this.truckMesh.scale.setScalar(1);
     }

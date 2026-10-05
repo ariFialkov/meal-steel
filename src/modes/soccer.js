@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Mode } from './base.js';
 import { BotDriver } from '../ai/bot.js';
-import { buildArena as buildArenaVisuals, soccerBall } from '../world/setpieces.js';
+import { buildArena as buildArenaVisuals, soccerBall, teamMarker, waveFlag, NeonScoreboard } from '../world/setpieces.js';
 import { clamp, fmtTime } from '../core/math.js';
 
 const BALL_R = 1.6;
@@ -21,6 +21,12 @@ export class SoccerMode extends Mode {
     // keepers: last bot of each team
     this.keeper = { 1: this.teams[1].filter((t) => !t.isPlayer).slice(-1)[0], 2: this.teams[2].slice(-1)[0] };
     this.score = { 1: 0, 2: 0 };
+    // team identity without touching the skins
+    for (const tr of this.trucks) { tr.teamMarker = teamMarker(tr.team === 1 ? 0x2f9bff : 0xff4d57); tr.mesh.add(tr.teamMarker); }
+    // giant neon scoreboard behind the boards on one long side, facing the pitch
+    this.board = new NeonScoreboard(); const side = rng.sign();
+    this.board.group.position.set(side * (A.maxX + 9), 0, 0); this.board.group.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    g.scene.add(this.board.group);
     // goal schedule
     const win = g.outcome.win, winner = win ? 1 : 2, loser = win ? 2 : 1;
     const W = rng.int(2, 4), L = rng.int(0, W - 1);
@@ -55,7 +61,8 @@ export class SoccerMode extends Mode {
   }
   kickoff(delay) {
     const A = this.A;
-    this.pause = delay; this.ball.x = 0; this.ball.z = 0; this.ball.y = BALL_R + 2; this.ball.vx = this.ball.vy = this.ball.vz = 0;
+    this.pause = delay; this.ball.x = 0; this.ball.z = 0; this.ball.y = 12; this.ball.vx = this.ball.vy = this.ball.vz = 0;
+    this.ball.live = false; // nobody can touch it until it has dropped and bounced
     for (const team of [1, 2]) {
       const sgn = team === 1 ? -1 : 1, list = this.teams[team], n = list.length;
       list.forEach((tr, i) => {
@@ -67,6 +74,15 @@ export class SoccerMode extends Mode {
     }
     this.ballMesh.position.set(0, this.ball.y, 0);
   }
+  /** Per-frame cosmetics: flags, scoreboard. */
+  decorate(dt, t) {
+    for (const tr of this.trucks) if (tr.teamMarker) waveFlag(tr.teamMarker, t + tr.id, tr.speed);
+    const sec = Math.max(0, Math.ceil(this.timeLeft)), mm = Math.floor(sec / 60), ss = String(sec % 60).padStart(2, '0');
+    this.board.update({ blue: this.score[1], red: this.score[2], time: `${mm}:${ss}`, note: this.stoppage ? 'STOPPAGE TIME' : this.pause > 0 ? 'KICK OFF' : '' });
+  }
+  /** Ball cam on/off (Rocket League style). */
+  toggleCamera() { this.cameraMode = this.cameraMode === 'ball' ? 'car' : 'ball'; this.game.hud.toast(this.cameraMode === 'ball' ? 'BALL CAM' : 'CAR CAM', 'gold'); this.game.hud.setCamMode(this.cameraMode); }
+  applyRender(alpha) { const b = this.ball; if (b.px === undefined) return; this.ballMesh.position.set(b.px + (b.x - b.px) * alpha, b.py + (b.y - b.py) * alpha, b.pz + (b.z - b.pz) * alpha); }
   goalZ(team) { return team === 1 ? this.A.maxZ : this.A.minZ; } // goal the team attacks
   ownGoalZ(team) { return team === 1 ? this.A.minZ : this.A.maxZ; }
   pendingGoal() { return this.schedule.find((s) => !s.done && s.t <= this.elapsed) || null; }
@@ -76,10 +92,11 @@ export class SoccerMode extends Mode {
     super.update(dt, t);
     const g = this.game;
     if (this.finished) { for (const b of this.bots) this.drivers.get(b.id).stop(dt); this.updateBall(dt, false); return; }
-    if (this.pause > 0) { this.pause -= dt; for (const b of this.bots) this.drivers.get(b.id).stop(dt); this.ballMesh.position.set(this.ball.x, this.ball.y, this.ball.z); return; }
+    if (this.pause > 0) { this.pause -= dt; for (const b of this.bots) this.drivers.get(b.id).stop(dt); this.ball.px = this.ball.x; this.ball.py = this.ball.y; this.ball.pz = this.ball.z; this.ballMesh.position.set(this.ball.x, this.ball.y, this.ball.z); this.decorate(dt, t); return; }
     if (!this.stoppage) this.timeLeft -= dt;
     this.directBots(dt, t);
     this.updateBall(dt, true);
+    this.decorate(dt, t);
     if (this.timeLeft <= 0 && !this.stoppage) {
       const leader = this.score[1] === this.score[2] ? 0 : (this.score[1] > this.score[2] ? 1 : 2);
       if (leader === this.winner) this.endMatch();
@@ -88,10 +105,11 @@ export class SoccerMode extends Mode {
   }
   updateBall(dt, live) {
     const b = this.ball, A = this.A, g = this.game;
+    b.px = b.x; b.py = b.y; b.pz = b.z;
     b.vy -= 20 * dt;
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
     const drag = Math.exp(-0.25 * dt); b.vx *= drag; b.vz *= drag;
-    if (b.y < BALL_R) { b.y = BALL_R; b.vy = Math.abs(b.vy) > 1.5 ? -b.vy * 0.6 : 0; b.vx *= 0.97; b.vz *= 0.97; }
+    if (b.y < BALL_R) { if (!b.live) { b.live = true; this.game.audio.thud(); this.game.fx.smoke(b.x, 0.3, b.z, 6, 0xdddddd, 0.6); } b.y = BALL_R; b.vy = Math.abs(b.vy) > 1.5 ? -b.vy * 0.6 : 0; b.vx *= 0.97; b.vz *= 0.97; }
     if (b.y > 16) { b.y = 16; b.vy = -Math.abs(b.vy) * 0.5; }
     // side walls
     if (b.x < A.minX + BALL_R) { b.x = A.minX + BALL_R; b.vx = Math.abs(b.vx) * 0.8; }
@@ -123,7 +141,7 @@ export class SoccerMode extends Mode {
       }
     }
     // trucks hit the ball
-    if (live) for (const tr of this.trucks) {
+    if (live && b.live) for (const tr of this.trucks) {
       if (!tr.alive) continue;
       // closest point on truck OBB (2D) to ball
       const dx = b.x - tr.x, dz = b.z - tr.z;

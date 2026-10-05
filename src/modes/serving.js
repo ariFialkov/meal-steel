@@ -1,0 +1,81 @@
+// Customer queues for Rumble serving spots: a short line of pedestrians waits at an open spot; when a truck parks
+// they step up one at a time, order (speech bubble), get their food and walk off. Cheap: a handful of small merged
+// meshes per spot, animated with plain transforms.
+import * as THREE from 'three';
+import { GeoBuilder } from '../world/builder.js';
+import { person } from '../world/setpieces.js';
+
+const QUEUE_LEN = 4;
+const SLOT = (k) => new THREE.Vector3(3.4 + k * 1.15, 0, 0.25 + k * 0.55);   // local positions, front of the line first
+const ARRIVE = new THREE.Vector3(9.5, 0, 4.5), LEAVE_DIR = new THREE.Vector3(0.9, 0, -1).normalize();
+let SHARED = null;
+function shared() {
+  if (SHARED) return SHARED;
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.strokeStyle = '#22304a'; x.lineWidth = 7;
+  x.beginPath(); x.roundRect(8, 8, 112, 84, 22); x.moveTo(40, 92); x.lineTo(34, 118); x.lineTo(64, 92); x.fill(); x.stroke();
+  x.fillStyle = '#e9b96e'; x.beginPath(); x.ellipse(64, 40, 32, 16, 0, Math.PI, 0); x.fill();               // burger bun
+  x.fillStyle = '#3fd46f'; x.fillRect(30, 40, 68, 7); x.fillStyle = '#8a4a2a'; x.fillRect(32, 47, 64, 10);
+  x.fillStyle = '#e9b96e'; x.beginPath(); x.roundRect(32, 57, 64, 12, 6); x.fill();
+  const bubble = new THREE.CanvasTexture(c); bubble.colorSpace = THREE.SRGBColorSpace;
+  const boxGeo = new THREE.BoxGeometry(0.45, 0.3, 0.32), boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
+  const bandGeo = new THREE.BoxGeometry(0.46, 0.08, 0.33), bandMat = new THREE.MeshStandardMaterial({ color: 0xff4d57, roughness: 0.6 });
+  SHARED = { mat, bubble, boxGeo, boxMat, bandGeo, bandMat };
+  return SHARED;
+}
+
+function makeCustomer(rng) {
+  const S = shared(), b = new GeoBuilder();
+  person(b, 0, 0, 0, rng, rng.range(0.92, 1.08));
+  const g = new THREE.Group(), body = new THREE.Mesh(b.build(), S.mat); body.castShadow = true; g.add(body);
+  const food = new THREE.Group(); food.add(new THREE.Mesh(S.boxGeo, S.boxMat), new THREE.Mesh(S.bandGeo, S.bandMat));
+  food.position.set(0.28, 0.85, 0.22); food.visible = false; g.add(food);
+  g.userData = { body, food };
+  return g;
+}
+
+export class ServeQueue {
+  constructor(spotGroup, rng) {
+    this.group = spotGroup; this.rng = rng; this.line = []; this.leaving = []; this.spawnT = 0; this.cycle = null;
+    const S = shared();
+    this.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.bubble, depthWrite: false })); this.bubble.scale.set(1.3, 1.3, 1); this.bubble.visible = false;
+    spotGroup.add(this.bubble);
+    for (let k = 0; k < QUEUE_LEN; k++) this.join(SLOT(k));
+  }
+  join(at) {
+    const c = makeCustomer(this.rng); c.position.copy(at); c.rotation.y = -Math.PI / 2 + this.rng.range(-0.3, 0.3);
+    this.group.add(c); this.line.push({ mesh: c, phase: this.rng.range(0, 6) });
+  }
+  /** occupied: a truck is parked and serving. onServed is called when a customer gets their food. */
+  update(dt, t, occupied, onServed) {
+    // walk everyone in line towards their slot
+    this.line.forEach((cu, k) => {
+      const target = SLOT(k), m = cu.mesh, d = target.clone().sub(m.position); const dist = d.length();
+      if (dist > 0.03) { m.position.addScaledVector(d, Math.min(1, (2.2 * dt) / dist)); m.rotation.y = Math.atan2(d.x, d.z); m.userData.body.position.y = Math.abs(Math.sin(t * 11 + cu.phase)) * 0.07; }
+      else { m.userData.body.position.y = 0; m.rotation.y += ((-Math.PI / 2 + Math.sin(t * 0.7 + cu.phase) * 0.35) - m.rotation.y) * Math.min(1, 3 * dt); }
+    });
+    // serving cycle for the customer at the front
+    const front = this.line[0];
+    if (occupied && front && front.mesh.position.distanceTo(SLOT(0)) < 0.2) {
+      if (!this.cycle) this.cycle = { t: 0 };
+      this.cycle.t += dt;
+      const ct = this.cycle.t;
+      this.bubble.visible = ct < 0.9;
+      this.bubble.position.set(front.mesh.position.x, 2.75 + Math.sin(t * 6) * 0.05, front.mesh.position.z);
+      if (ct > 1.4 && !front.mesh.userData.food.visible) { front.mesh.userData.food.visible = true; onServed(); }
+      if (ct > 1.9) { this.line.shift(); this.leaving.push({ mesh: front.mesh, t: 0 }); this.cycle = null; this.bubble.visible = false; }
+    } else if (!occupied) { this.cycle = null; this.bubble.visible = false; }
+    // leavers walk off with their food and fade out
+    for (let i = this.leaving.length - 1; i >= 0; i--) {
+      const l = this.leaving[i]; l.t += dt;
+      l.mesh.position.addScaledVector(LEAVE_DIR, 2.4 * dt); l.mesh.rotation.y = Math.atan2(LEAVE_DIR.x, LEAVE_DIR.z);
+      l.mesh.userData.body.position.y = Math.abs(Math.sin(t * 11 + i)) * 0.07;
+      if (l.t > 2.2) l.mesh.scale.setScalar(Math.max(0.01, 1 - (l.t - 2.2) / 0.5));
+      if (l.t > 2.7) { this.group.remove(l.mesh); l.mesh.userData.body.geometry.dispose(); this.leaving.splice(i, 1); }
+    }
+    // new customers wander up to the back of the line
+    if (this.line.length < QUEUE_LEN) { this.spawnT += dt; if (this.spawnT > 1.2) { this.spawnT = 0; this.join(ARRIVE); } }
+  }
+  dispose() { for (const c of [...this.line, ...this.leaving]) c.mesh.userData.body.geometry.dispose(); }
+}

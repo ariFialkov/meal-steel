@@ -158,6 +158,13 @@ button { font-family: var(--display); cursor: pointer; border: 0; color: var(--i
 .gauge .bar { width: 120px; height: 16px; border-radius: 8px; background: rgba(34,48,74,.15); overflow: hidden; border: 3px solid var(--ink); box-shadow: inset 0 3px 0 rgba(34,48,74,.1); }
 .gauge .bar div { height: 100%; width: 100%; background: linear-gradient(180deg, #ffb060, var(--orange)); transition: width .1s linear; }
 #specialBar { background: linear-gradient(180deg, #7cc0ff, var(--blue)); }
+.hp-gauge .bar { width: 150px; }
+#hpBar { background: linear-gradient(180deg, #7ae89b, var(--green)); }
+#hpBar.mid { background: linear-gradient(180deg, #ffe680, var(--yellow)); }
+#hpBar.low { background: linear-gradient(180deg, #ff8a90, var(--red)); animation: pulse 0.6s ease-in-out infinite; }
+.board .row .hpb { width: 34px; height: 6px; border-radius: 3px; background: rgba(34,48,74,.2); overflow: hidden; display: inline-block; }
+.board .row .hpb b { display: block; height: 100%; background: var(--green); }
+.board .row .hpb b.mid { background: var(--yellow); } .board .row .hpb b.low { background: var(--red); }
 .speed { font-family: var(--display); font-size: 30px; min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); padding-top: 4px; }
 .speed::after { content: " km/h"; font-size: 11px; opacity: .7; }
 .actions { display: none; gap: 12px; align-items: flex-end; }
@@ -169,12 +176,26 @@ button { font-family: var(--display); cursor: pointer; border: 0; color: var(--i
 .act.cooling { filter: grayscale(1); opacity: .6; }
 .act:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
 .quit { position: absolute; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%); margin-left: -170px; background: var(--white); border: 3px solid var(--ink); border-radius: 50%; width: 34px; height: 34px; font-size: 16px; line-height: 0; display: grid; place-items: center; opacity: .8; box-shadow: 0 3px 0 var(--ink); }
+/* soccer camera switch */
+.cam-btn { position: absolute; right: calc(14px + var(--safe-r, 0px)); top: calc(250px + var(--safe-t)); display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; background: var(--white); border: 3px solid var(--ink); border-radius: 999px; box-shadow: 0 4px 0 var(--ink); font-family: var(--display); font-size: 14px; letter-spacing: 1px; color: var(--ink); pointer-events: auto; cursor: pointer; }
+.cam-btn span { width: 24px; height: 24px; display: grid; place-items: center; font-size: 22px; line-height: 0; }
+.cam-btn small { font-family: var(--body, inherit); font-size: 10px; background: var(--ink); color: #fff; border-radius: 4px; padding: 2px 5px; }
+.cam-btn.car { background: #ffd23f; }
+.cam-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+body.touch .cam-btn small { display: none; }
+@media (max-width: 900px) { .cam-btn { top: auto; bottom: calc(190px + var(--safe-b, 0px)); right: calc(18px + var(--safe-r, 0px)); } }
 @media (max-width: 900px) { .quit { margin-left: -130px; top: calc(64px + var(--safe-t)); } }
 body.touch .joystick, body.touch .actions { display: flex; }
 body.touch .gauges { position: absolute; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%) rotate(-1deg); }
 body.touch .speed { display: none; }
 body.touch #minimap { width: 112px; height: 112px; }
 body.touch .board { font-size: 12px; min-width: 140px; }
+
+.status-badge { position: absolute; left: 50%; top: 24%; transform: translateX(-50%) rotate(-2deg); background: var(--red); border: 4px solid var(--ink); border-radius: 16px; padding: 6px 16px 8px; text-align: center; box-shadow: 4px 5px 0 var(--ink); pointer-events: none; animation: wiggle .5s ease; }
+.status-badge b { font-family: var(--display); font-size: 22px; color: #fff; letter-spacing: 1px; text-shadow: 2px 2px 0 var(--ink); display: block; }
+.status-badge i { display: block; width: 140px; height: 8px; border-radius: 4px; background: rgba(0,0,0,.25); margin-top: 4px; overflow: hidden; }
+.status-badge i span { display: block; height: 100%; background: #fff; }
+.status-badge.blue { background: var(--blue); } .status-badge.purple { background: var(--purple); } .status-badge.orange { background: var(--orange); }
 
 /* ---------- RESULTS ---------- */
 #results { display: grid; place-items: center; background: rgba(34, 48, 74, 0.45); }

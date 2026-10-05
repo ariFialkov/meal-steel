@@ -19,6 +19,7 @@ const ICONS = {
   flame: `<path d="M32 5c4 11 15 15 15 29a15 15 0 0 1-30 0c0-8 4-12 7-17 1 5 3 7 6 8-1-8 0-13 2-20z" fill="#ff8a3d"/>
     <path d="M32 30c3 5 8 7 8 13a8 8 0 0 1-16 0c0-5 3-7 5-10 1 2 2 3 3 3z" fill="#ffd23f" stroke="none"/>`,
   reverse: `<path d="M14 10l18 14 18-14v11L32 35 14 21z" fill="#fff"/><path d="M14 30l18 14 18-14v11L32 55 14 41z" fill="#fff"/>`,
+  camera: `<rect x="6" y="18" width="40" height="30" rx="6" fill="#3a9cff"/><path d="M46 28l12-8v26l-12-8z" fill="#fff"/><circle cx="20" cy="12" r="6" fill="#fff"/><circle cx="34" cy="12" r="6" fill="#fff"/>`,
   close: `<path d="M16 16l32 32M48 16L16 48" stroke-width="8"/>`,
   rotate: `<path d="M50 34a18 18 0 1 1-7-14" fill="none" stroke-width="6"/><path d="M52 8v16H36z" fill="${INK}" stroke="none"/>`,
   coin: `<circle cx="32" cy="32" r="26" fill="#ffd23f"/><circle cx="32" cy="32" r="18" fill="none" stroke="#e0a800" stroke-width="3"/>

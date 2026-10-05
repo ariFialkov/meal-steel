@@ -132,6 +132,7 @@ export class Truck {
   impulse(ix, iz, iy = 0) { this.vx += ix / this.mass; this.vz += iz / this.mass; if (iy > 0) { this.vy += iy / this.mass; this.airborne = true; } }
 
   update(dt, world, t) {
+    this.px = this.x; this.py = this.y; this.pz = this.z; this.ph = this.heading;
     const c = this.control, fx = this.fx;
     for (const k in fx) if (fx[k] > 0) fx[k] = Math.max(0, fx[k] - dt);
     if (this.turboTime > 0) this.turboTime -= dt; else if (this.turboCd > 0) this.turboCd = Math.max(0, this.turboCd - dt);
@@ -143,6 +144,14 @@ export class Truck {
     if (fx.drunk > 0) steer = clamp(steer * -0.6 + Math.sin(t * 5.3) * 0.9, -1, 1);
     if (fx.blind > 0 && !this.isPlayer) steer = clamp(steer + Math.sin(t * 7.1 + this.id) * 0.8, -1, 1);
     if (c.turbo && this.turboCd <= 0 && this.turboTime <= 0 && !disabled) { this.turboTime = 1.6; this.turboCd = this.turboCdMax; this.events.push({ type: 'turbo' }); }
+    // a mode may drive this truck kinematically (e.g. race bots on the racing line); effects hand it back to physics
+    if (this.kinematicStep && !disabled && !this.airborne) {
+      this.kinematicStep(dt, world);
+      this.fwdSpeed = this.vx * Math.sin(this.heading) + this.vz * Math.cos(this.heading); this.speed = Math.hypot(this.vx, this.vz);
+      this.stuckTime = 0; this.drifting = false;
+      this.syncMesh(dt, t);
+      return;
+    }
     const turbo = this.turboTime > 0;
 
     const fX = Math.sin(this.heading), fZ = Math.cos(this.heading), rX = Math.cos(this.heading), rZ = -Math.sin(this.heading);
@@ -163,12 +172,14 @@ export class Truck {
       if (wantDrift && !this.drifting) { this.drifting = true; this.events.push({ type: 'driftStart' }); }
       if (this.drifting && (spd < this.maxSpeed * 0.3 || Math.abs(steer) < 0.15)) this.drifting = false;
       // steering
-      const spFactor = (spd > 0.4 ? clamp(spd / 7, 0.35, 1) : 0) * (1 - 0.3 * clamp(spd / this.maxSpeed, 0, 1));
+      // pressed against something, the wheels still scrub round so the driver can always turn away
+      const steerSpd = this.touching ? Math.max(spd, Math.abs(throttle) * 4) : spd;
+      const spFactor = (steerSpd > 0.4 ? clamp(steerSpd / 7, 0.35, 1) : 0) * (1 - 0.3 * clamp(spd / this.maxSpeed, 0, 1));
       let tr = this.turnRate * (this.drifting ? 1.6 : 1) * (fx.slick > 0 ? 0.35 : 1);
-      const dir = fs >= 0 ? 1 : -1;
+      const dir = fs > 0.5 ? 1 : fs < -0.5 ? -1 : (throttle < 0 ? -1 : 1);
       const targetAng = steer * tr * spFactor * dir;
       this.angVel = damp(this.angVel, targetAng, this.drifting ? 5 : 9, dt);
-      if (fx.spin > 0) this.angVel = 7;
+      if (fx.spin > 0) this.angVel = Math.sign(this.angVel || 1) * Math.max(Math.abs(this.angVel), 2 + fx.spin * 5);
       if (fx.ram > 0) this.angVel += 0; // visual spin handled on body
       // lateral grip
       let gripL = this.drifting ? 2.2 : 9;
@@ -187,6 +198,12 @@ export class Truck {
 
     // elevation
     const el = world.elevation(this.x, this.z);
+    if (el.ramp && el.h - this.y > 0.7) {
+      // ran into the side or the lip of a jump ramp: it is a solid block from there
+      this.x = this.px; this.z = this.pz; el.h = this.y > 0.05 ? world.rampHeight(this.x, this.z) : 0; if (el.h < 0) el.h = 0; el.ramp = false;
+      const sp = Math.hypot(this.vx, this.vz); this.vx *= -0.3; this.vz *= -0.3;
+      if (sp > 4) this.events.push({ type: 'wall', strength: sp / 10, x: this.x, z: this.z });
+    }
     this.groundH = el.h; this.onOverpass = !!el.op && el.h > 0.05;
     if (this.onOverpass) {
       const op = el.op, lim = op.halfWidth - 1.2;
@@ -198,32 +215,41 @@ export class Truck {
       }
       const h2 = world.overpassHeightAlong(op, el.along + 1);
       this.slope = Math.atan2(h2 - el.h, 1) * (this.vx * op.ux + this.vz * op.uz >= 0 ? 1 : -1);
-    } else this.slope = 0;
+    } else this.slope = el.ramp ? Math.atan((this.vyGround || 0) / Math.max(4, Math.abs(this.fwdSpeed))) : 0;
+    // vertical speed the ground imparts (ramps): used as launch speed when the ground drops away
+    // (on the step the ground drops away the previous, rising value is kept, so it becomes the launch speed)
+    if (!this.airborne && this.groundH > (this.prevGroundH ?? this.groundH) - 0.01) this.vyGround = (this.groundH - (this.prevGroundH ?? this.groundH)) / dt;
+    this.prevGroundH = this.groundH;
     if (this.airborne) {
       this.y += this.vy * dt;
       if (this.y <= this.groundH) { this.y = this.groundH; this.vy = 0; this.airborne = false; this.bounce = 0.35; this.events.push({ type: 'land' }); }
     } else {
-      this.y = damp(this.y, this.groundH, 14, dt);
+      this.y = el.ramp ? this.groundH : damp(this.y, this.groundH, 14, dt);
       if (this.groundH - this.y > 0.8) this.y = this.groundH;
-      if (this.y - this.groundH > 1.2) { this.airborne = true; this.vy = 0; }
+      if (this.y - this.groundH > 1.2 || (this.y - this.groundH > 0.4 && (this.vyGround || 0) > 2)) { this.airborne = true; this.vy = Math.max(0, (this.vyGround || 0) * (this.turboTime > 0 ? 1.3 : 1.08)); this.events.push({ type: 'launch', vy: this.vy }); }
     }
 
     // static collisions: two circles vs world boxes
     this.lastImpact = 0; this.dbgContacts = 0;
+    const wasTouching = this.touching; this.touching = false;
     for (const off of [CIRC_OFF, -CIRC_OFF]) {
       const cx = this.x + nfX * off, cz = this.z + nfZ * off;
       const contacts = world.circleContacts(cx, cz, CIRC_R, this._contacts);
       for (const ct of contacts) {
         if (this.y > (ct.box.height || 10) + 0.5) continue;
-        this.dbgContacts++;
+        this.dbgContacts++; this.touching = true;
         this.x += ct.nx * ct.depth; this.z += ct.nz * ct.depth;
         const vn = this.vx * ct.nx + this.vz * ct.nz;
         if (vn < 0) {
           const strength = -vn;
-          this.vx -= ct.nx * vn * 1.35; this.vz -= ct.nz * vn * 1.35;
-          this.vx *= 0.92; this.vz *= 0.92;
-          this.angVel += (off > 0 ? 1 : -1) * (ct.nx * nrX + ct.nz * nrZ) * strength * 0.12;
-          if (strength > 3) { this.lastImpact = Math.max(this.lastImpact, strength); this.events.push({ type: 'wall', strength: strength / 10, x: cx, z: cz }); }
+          // resting contact (pushing into a wall) just cancels the normal velocity; real impacts bounce
+          const e = strength > 4 ? 0.35 : 0;
+          this.vx -= ct.nx * vn * (1 + e); this.vz -= ct.nz * vn * (1 + e);
+          const tangentKeep = strength > 4 ? 0.9 : 0.985;
+          this.vx *= tangentKeep; this.vz *= tangentKeep;
+          // a glancing impact twists the truck once; constant pushing must not build up spin
+          if (strength > 6 && !wasTouching) this.angVel += clamp((off > 0 ? 1 : -1) * (ct.nx * nrX + ct.nz * nrZ) * strength * 0.08, -2, 2);
+          if (strength > 3 && !wasTouching) { this.lastImpact = Math.max(this.lastImpact, strength); this.events.push({ type: 'wall', strength: strength / 10, x: cx, z: cz }); }
         }
       }
     }
@@ -261,7 +287,8 @@ export class Truck {
         const vn = this.vx * nx + this.vz * nz;
         if (vn < 0) {
           const strength = -vn;
-          this.vx -= nx * vn * 1.5; this.vz -= nz * vn * 1.5;
+          const e = strength > 4 ? 0.5 : 0;
+          this.vx -= nx * vn * (1 + e); this.vz -= nz * vn * (1 + e);
           if (strength > 13 && this.fx.stun <= 0 && this.fx.ram <= 0) { this.applyEffect('stun', 1.6); this.vx *= 0.25; this.vz *= 0.25; this.angVel = (Math.random() - 0.5) * 6; onHit?.(it, 'totaled', strength); }
           else onHit?.(it, 'bump', strength);
         }
@@ -275,6 +302,22 @@ export class Truck {
     }
   }
 
+  /** Cartwheel the body: a full roll (lands back on its wheels) or, for a knockout, half a roll onto its roof. */
+  tumble(dir = 1, ko = false) {
+    if (this.tumbleT !== undefined && this.tumbleT < this.tumbleDur) return;
+    this.tumbleT = 0; this.tumbleDur = ko ? 0.9 : 1.15; this.tumbleKO = ko; this.tumbleDir = dir >= 0 ? 1 : -1;
+    this.flipBase = this.flipped ? Math.PI : 0;
+  }
+  /** Place the mesh between the previous and current physics states (alpha in [0, 1]). */
+  applyRender(alpha) {
+    if (this.px === undefined) return;
+    const a = alpha, b = 1 - alpha;
+    this.rx = this.px * b + this.x * a; this.ry = this.py * b + this.y * a; this.rz = this.pz * b + this.z * a;
+    this.rh = this.ph + wrapAngle(this.heading - this.ph) * a;
+    const m = this.mesh;
+    m.position.x = this.rx; m.position.z = this.rz; m.position.y += this.ry - this.y;
+    m.rotation.y = this.rh;
+  }
   syncMesh(dt, t = 0) {
     const m = this.mesh, ud = m.userData;
     this.bounce = Math.max(0, this.bounce - dt * 1.2);
@@ -283,7 +326,16 @@ export class Truck {
     const latAcc = this.angVel * this.fwdSpeed;
     this.roll = damp(this.roll, clamp(-latAcc * 0.012, -0.22, 0.22) + (this.fx.drunk > 0 ? Math.sin(t * 6) * 0.12 : 0), 8, dt);
     this.pitch = damp(this.pitch, -this.slope + (this.control.throttle > 0 ? -0.02 : 0.015) * clamp(this.speed / 10, 0, 1), 8, dt);
-    ud.body.rotation.set(this.pitch, this.fx.ram > 0 ? (t * 14) % (Math.PI * 2) : 0, this.roll);
+    let flip = this.flipped ? Math.PI : 0;
+    if (this.tumbleT !== undefined && this.tumbleT < this.tumbleDur) {
+      this.tumbleT += dt; const k = Math.min(1, this.tumbleT / this.tumbleDur), e = 1 - Math.pow(1 - k, 3);
+      flip = this.tumbleDir * e * (this.tumbleKO ? Math.PI : Math.PI * 2);
+      if (k >= 1 && this.tumbleKO) this.flipped = true;
+    }
+    // roll about the body's centre (1.8 m up) rather than its base
+    const P = 1.8;
+    ud.body.position.set(P * Math.sin(flip), P * (1 - Math.cos(flip)), 0);
+    ud.body.rotation.set(this.pitch, this.fx.ram > 0 ? (t * 14) % (Math.PI * 2) : 0, this.roll + flip);
     this.wheelSpin += this.fwdSpeed * dt / 0.55;
     this.steerVis = damp(this.steerVis, this.control.steer * 0.45, 10, dt);
     for (let i = 0; i < ud.wheels.length; i++) { const w = ud.wheels[i]; w.rotation.y = i < 2 ? this.steerVis : 0; w.children[0].rotation.x = this.wheelSpin; w.children[1].rotation.x = this.wheelSpin; }
@@ -306,12 +358,12 @@ export function collideTrucks(a, b) {
   const rvx = a.vx - b.vx, rvz = a.vz - b.vz;
   const vn = rvx * r.nx + rvz * r.nz; // positive = approaching (a moving toward b along -n)... n points from b to a
   if (vn >= 0) return { strength: 0, nx: r.nx, nz: r.nz };
-  const e = 0.45;
+  const e = vn < -3 ? 0.45 : 0;
   const j = -(1 + e) * vn / (1 / ma + 1 / mb);
   a.vx += (j / ma) * r.nx; a.vz += (j / ma) * r.nz;
   b.vx -= (j / mb) * r.nx; b.vz -= (j / mb) * r.nz;
   // some spin
   const strength = -vn;
-  a.angVel += (Math.random() - 0.5) * strength * 0.08; b.angVel += (Math.random() - 0.5) * strength * 0.08;
+  if (strength > 5) { a.angVel += (Math.random() - 0.5) * strength * 0.06; b.angVel += (Math.random() - 0.5) * strength * 0.06; }
   return { strength, nx: r.nx, nz: r.nz, j };
 }

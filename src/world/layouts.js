@@ -32,7 +32,8 @@ export function makePlan(modeId, params, rng) {
   }
   if (modeId === 'rumble' || modeId === 'chairs') {
     const plan = emptyPlan(7, 7);
-    const floor = modeId === 'rumble' ? 'pave' : 'grass';
+    // Musical Trucks rotates through paved venues (grass only in planted beds)
+    const floor = modeId === 'rumble' ? 'pave' : (globalThis.__forceVenue || rng.pick(['square', 'parking', 'market', 'park']));
     plan.clear = { i0: 2, i1: 4, j0: 2, j1: 4, floor };
     for (let j = 2; j <= 4; j++) for (let i = 2; i <= 4; i++) plan.blocks[j][i] = 'open';
     for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) if (plan.blocks[j][i] === 'bld' && rng.chance(0.1)) plan.blocks[j][i] = 'park';

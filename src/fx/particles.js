@@ -1,4 +1,4 @@
-// One InstancedMesh of small boxes handles confetti, sparks, smoke puffs, coins pickups, splashes.
+// One InstancedMesh of small puffs handles confetti, sparks, smoke puffs, coins pickups, splashes.
 import * as THREE from 'three';
 
 const MAX = 900;
@@ -6,7 +6,8 @@ const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quatern
 
 export class Particles {
   constructor(scene) {
-    const geo = new THREE.BoxGeometry(1, 1, 1);
+    // rounded low-poly puff (reads as smoke, sparks or confetti once scaled; boxes looked like rubble)
+    const geo = new THREE.IcosahedronGeometry(0.62, 1);
     this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: false }), MAX);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);

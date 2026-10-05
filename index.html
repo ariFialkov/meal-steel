@@ -38,7 +38,7 @@
       <footer class="menu-bottom">
         <div class="modes" id="modes">
           <button class="mode" data-mode="race"><i data-icon="flag"></i><b>RACE</b><small>4–8 trucks · podium payout</small></button>
-          <button class="mode" data-mode="rumble"><i data-icon="burst"></i><b>RUMBLE</b><small>12 trucks · most points wins</small></button>
+          <button class="mode" data-mode="rumble"><i data-icon="burst"></i><b>RUMBLE</b><small>5–12 trucks · last truck smashing wins</small></button>
           <button class="mode" data-mode="soccer"><i data-icon="ball"></i><b>SOCCER</b><small>3v3 · 4v4 · 5v5 futsal</small></button>
           <button class="mode" data-mode="chairs"><i data-icon="note"></i><b>MUSICAL TRUCKS</b><small>14 trucks · last one parked</small></button>
         </div>
@@ -70,10 +70,12 @@
         <div class="map-wrap"><div class="sticker-hdr blue">MAP</div><canvas id="minimap" width="200" height="200"></canvas></div>
       </div>
       <div class="announce" id="announce"></div>
+      <div class="status-badge hidden" id="statusBadge"><b id="statusText"></b><i><span id="statusFill"></span></i></div>
       <div class="toast-stack" id="toasts"></div>
       <div class="hud-bottom">
         <div class="joystick" id="joystick"><div class="stick" id="stick"></div></div>
         <div class="gauges">
+          <div class="gauge hp-gauge hidden" id="hpGauge"><label>HEALTH</label><div class="bar"><div id="hpBar"></div></div></div>
           <div class="gauge"><label>TURBO</label><div class="bar"><div id="turboBar"></div></div></div>
           <div class="gauge"><label id="specialLabel">SPECIAL</label><div class="bar"><div id="specialBar"></div></div></div>
           <div class="speed" id="speed">0</div>
@@ -85,6 +87,7 @@
         </div>
       </div>
       <button class="quit" id="quitBtn" data-icon="close"></button>
+      <button class="cam-btn hidden" id="camBtn"><span data-icon="camera"></span><b id="camLabel">BALL CAM</b><small>C</small></button>
     </section>
 
     <!-- RESULTS -->

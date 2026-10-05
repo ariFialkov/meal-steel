@@ -77,23 +77,79 @@ export function buildCity(scene, plan, nb, weather, rng) {
     const c = plan.clear;
     const x0 = roadX(plan, c.i0) + P_ROAD / 2 - 1.5, x1 = roadX(plan, c.i1 + 1) - P_ROAD / 2 + 1.5;
     const z0 = roadZ(plan, c.j0) + P_ROAD / 2 - 1.5, z1 = roadZ(plan, c.j1 + 1) - P_ROAD / 2 + 1.5;
-    if (c.floor === 'grass') {
-      ground('grass', x0, z0, x1, z1, 0.2, TILE.grass[0]);
-      for (let k = 0; k < 8; k++) { const px = rng.range(x0 + 12, x1 - 12), pz = rng.range(z0 + 12, z1 - 12), pr = rng.range(3, 6); ground('sidewalk', px - pr, pz - pr, px + pr, pz + pr, 0.21, TILE.sidewalk[0] / 2, mix(walkTint, '#c9b79c', 0.6)); }
-    } else {
-      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, half = Math.min(x1 - x0, z1 - z0) / 2, ts = TILE.sidewalk[0] / 2.2;
-      // checker of warm and cool paving squares
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, half = Math.min(x1 - x0, z1 - z0) / 2, ts = TILE.sidewalk[0] / 2.2;
+    const S = cb.bucket('sidewalk'), P = cb.bucket('paint'), dark = rgb('#6d625c'), terra = rgb('#c75a34');
+    const ringQuad = (r0, r1, a0, a1, col, yy, B = S, tile = ts) => { const p = (r, a) => [cx + Math.cos(a) * r, yy, cz + Math.sin(a) * r], q = [p(r0, a0), p(r1, a0), p(r1, a1), p(r0, a1)]; B.quad(q[0], q[1], q[2], q[3], [0, 1, 0], q.map((v) => [v[0] / tile, v[2] / tile]), col); };
+    const disc = (r0, r1, col, yy, n = 64, B = S, tile = ts) => { for (let k = 0; k < n; k++) ringQuad(r0, r1, (k / n) * Math.PI * 2, ((k + 1) / n) * Math.PI * 2, col, yy, B, tile); };
+    const paint = (ax, az, bx, bz, col = [0.96, 0.96, 0.94], yy = 0.215) => P.quad([ax, yy, az], [ax, yy, bz], [bx, yy, bz], [bx, yy, az], [0, 1, 0], null, col);
+    // raised lawn bed with a kerb and trees (corners, outside the driving circle)
+    const garden = (gx0, gz0, gx1, gz1, trees = 2) => {
+      ground('grass', gx0, gz0, gx1, gz1, 0.32, TILE.grass[0]);
+      curbBox(gx0 - 0.25, gz0 - 0.25, gx1 + 0.25, gz0, 0.34, 0.16, '#bdb8ae'); curbBox(gx0 - 0.25, gz1, gx1 + 0.25, gz1 + 0.25, 0.34, 0.16, '#bdb8ae');
+      curbBox(gx0 - 0.25, gz0, gx0, gz1, 0.34, 0.16, '#bdb8ae'); curbBox(gx1, gz0, gx1 + 0.25, gz1, 0.34, 0.16, '#bdb8ae');
+      for (let k = 0; k < trees; k++) props.add(k === 0 ? 'bigtree' : 'tree', rng.range(gx0 + 2.5, gx1 - 2.5), rng.range(gz0 + 2.5, gz1 - 2.5), rng.range(0, 6.28), rng.range(0.9, 1.2));
+    };
+    const cornerGardens = (size, trees) => { for (const [sx, sz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const gx = sx ? x1 - 3 - size : x0 + 3, gz = sz ? z1 - 3 - size : z0 + 3; garden(gx, gz, gx + size, gz + size, trees); } };
+    // town square: warm/cool paving checker, granite rings and a compass rose
+    const paveSquare = () => {
       const sq = 6.5;
       for (let x = x0; x < x1 - 0.01; x += sq) for (let z = z0; z < z1 - 0.01; z += sq) {
         const k = (Math.round((x - x0) / sq) + Math.round((z - z0) / sq)) % 2;
         ground('sidewalk', x, z, Math.min(x + sq, x1), Math.min(z + sq, z1), 0.2, ts, k ? rgb('#e3cba9') : rgb('#c9ab8a'));
       }
-      // radial bands and rings of dark granite, compass rose in the middle
-      const S = cb.bucket('sidewalk'), y = 0.205, dark = rgb('#6d625c'), terra = rgb('#c75a34');
-      const ringQuad = (r0, r1, a0, a1, c, yy) => { const p = (r, a) => [cx + Math.cos(a) * r, yy, cz + Math.sin(a) * r], q = [p(r0, a0), p(r1, a0), p(r1, a1), p(r0, a1)]; S.quad(q[0], q[1], q[2], q[3], [0, 1, 0], q.map((v) => [v[0] / ts, v[2] / ts]), c); };
+      const y = 0.205;
       for (let k = 0; k < 64; k++) { const a0 = (k / 64) * Math.PI * 2, a1 = ((k + 1) / 64) * Math.PI * 2; ringQuad(half * 0.3, half * 0.33, a0, a1, dark, y); ringQuad(half * 0.92, half * 0.96, a0, a1, dark, y); ringQuad(half * 0.58, half * 0.6, a0, a1, terra, y); }
       for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2, w = 0.035; ringQuad(half * 0.33, half * 0.92, a - w, a + w, k % 2 ? dark : terra, y + 0.002); }
       for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2, r = half * (k % 2 ? 0.16 : 0.27), p = (rr, aa) => [cx + Math.cos(aa) * rr, y + 0.004, cz + Math.sin(aa) * rr]; S.tri(p(0, 0), p(r, a), p(half * 0.07, a + Math.PI / 8), [0, 1, 0], null, k % 2 ? dark : terra); S.tri(p(0, 0), p(half * 0.07, a - Math.PI / 8), p(r, a), [0, 1, 0], null, k % 2 ? terra : dark); }
+    };
+    if (c.floor === 'grass') {
+      ground('grass', x0, z0, x1, z1, 0.2, TILE.grass[0]);
+      for (let k = 0; k < 8; k++) { const px = rng.range(x0 + 12, x1 - 12), pz = rng.range(z0 + 12, z1 - 12), pr = rng.range(3, 6); ground('sidewalk', px - pr, pz - pr, px + pr, pz + pr, 0.21, TILE.sidewalk[0] / 2, mix(walkTint, '#c9b79c', 0.6)); }
+    } else if (c.floor === 'square') {
+      paveSquare(); cornerGardens(14, 3);
+      props.add('fountain', cx, cz, 0, 1);
+    } else if (c.floor === 'parking') {
+      // asphalt lot: painted stalls along every side, lane arrows, lamp posts, lawn islands in the corners
+      ground('asphalt', x0, z0, x1, z1, 0.2, TILE.asphalt[0], [0.92, 0.92, 0.95]);
+      const band0 = half - 22, band1 = half - 4, W = 3.2, yel = [1, 0.84, 0.25];
+      for (let side = 0; side < 4; side++) {
+        const rot = (u, v) => (side === 0 ? [cx + u, cz - v] : side === 1 ? [cx + u, cz + v] : side === 2 ? [cx - v, cz + u] : [cx + v, cz + u]);
+        const strip = (u0, v0, u1, v1, col) => { const a = rot(u0, v0), b = rot(u1, v1); paint(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]), col); };
+        for (let u = -half + 22; u <= half - 22 + 0.01; u += W) strip(u - 0.08, band0 + 6, u + 0.08, band1, [0.97, 0.97, 0.95]);
+        strip(-half + 22, band0 + 5.9, half - 22, band0 + 6.1, [0.97, 0.97, 0.95]);
+        for (let u = -half + 26; u < half - 24; u += 13) { strip(u, band0 + 1.6, u + 3.4, band0 + 2.0, yel); }
+        for (let u = -half + 30; u < half - 26; u += 26) { const a = rot(u, band1 + 1.6); props.add('lamp', a[0], a[1], side * Math.PI / 2, 1); }
+      }
+      for (let k = 0; k < 48; k++) ringQuad(17, 17.5, (k / 48) * Math.PI * 2, ((k + 0.6) / 48) * Math.PI * 2, yel, 0.216, P);
+      cornerGardens(16, 2);
+    } else if (c.floor === 'market') {
+      // market square: brick courses in alternating tints, granite banding every few metres, stalls round the edge
+      const bricks = [rgb('#c4704f'), rgb('#b0603f'), rgb('#cf8662')], cw = 2.4, cl = 7.2;
+      for (let z = z0, row = 0; z < z1 - 0.01; z += cw, row++) for (let x = x0 - (row % 2) * cl / 2; x < x1 - 0.01; x += cl) {
+        ground('sidewalk', Math.max(x, x0), z, Math.min(x + cl, x1), Math.min(z + cw, z1), 0.2, ts, bricks[(((row * 7 + Math.round(x)) % 3) + 3) % 3]);
+      }
+      const gran = rgb('#9d968e');
+      for (let x = x0 + 13; x < x1 - 6; x += 13) paint(x - 0.35, z0, x + 0.35, z1, gran, 0.205);
+      for (let z = z0 + 13; z < z1 - 6; z += 13) paint(x0, z - 0.35, x1, z + 0.35, gran, 0.206);
+      disc(0, 9, rgb('#e3d4bb'), 0.21, 48); disc(9, 10, dark, 0.212, 48);
+      props.add('statue', cx, cz, rng.range(0, 6.28), 1);
+      for (let k = 0; k < 18; k++) { const a = (k / 18) * Math.PI * 2 + rng.range(-0.05, 0.05), r = half - 9; props.add(k % 3 === 2 ? 'planter' : 'cart', cx + Math.cos(a) * r, cz + Math.sin(a) * r, a + Math.PI / 2, 1); }
+      cornerGardens(11, 2);
+    } else if (c.floor === 'park') {
+      // paved park: lawn with a big paved driving circle, paths out to the streets and planted corners
+      ground('grass', x0, z0, x1, z1, 0.2, TILE.grass[0]);
+      const warm = rgb('#ddc6a3'), cool = rgb('#cbb594');
+      for (let k = 0; k < 36; k++) { const a0 = (k / 36) * Math.PI * 2, a1 = ((k + 1) / 36) * Math.PI * 2; ringQuad(0, half * 0.72, a0, a1, k % 2 ? warm : cool, 0.21); }
+      disc(half * 0.72, half * 0.75, dark, 0.215, 72); disc(half * 0.35, half * 0.37, terra, 0.215, 64);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const w = 5, ax0 = dx ? (dx > 0 ? cx + half * 0.7 : x0) : cx - w, ax1 = dx ? (dx > 0 ? x1 : cx - half * 0.7) : cx + w;
+        const az0 = dz ? (dz > 0 ? cz + half * 0.7 : z0) : cz - w, az1 = dz ? (dz > 0 ? z1 : cz - half * 0.7) : cz + w;
+        ground('sidewalk', ax0, az0, ax1, az1, 0.212, ts, warm);
+      }
+      for (let k = 0; k < 14; k++) { const a = rng.range(0, 6.28), r = rng.range(half * 0.8, half * 0.95); if (Math.abs(Math.sin(a * 2)) < 0.25) continue; props.add(rng.chance(0.6) ? 'tree' : 'bigtree', cx + Math.cos(a) * r * 1.15, cz + Math.sin(a) * r * 1.15, rng.range(0, 6.28), rng.range(0.9, 1.2)); }
+      props.add('statue', cx, cz, rng.range(0, 6.28), 1);
+    } else {
+      paveSquare();
     }
     curbBox(x0 - 0.18, z0 - 0.18, x1 + 0.18, z1 + 0.18, 0.18, 0.2, '#bdb8ae');
   }
@@ -228,8 +284,10 @@ function buildPark(r, rng, props, cb, small = false) {
 }
 
 /** Scatter destructibles (and a few fixed hazards) around the edge of an open square. */
-export function scatterOpenProps(props, plan, rng, count = 44) {
+export function scatterOpenProps(props, plan, rng, count = 44, avoid = []) {
   const ring = plan.ring; if (!ring) return;
+  const add = props.add.bind(props), clear = (x, z) => avoid.every((c) => Math.hypot(x - c.x, z - c.z) > c.r);
+  props = { add: (type, x, z, ...rest) => (clear(x, z) ? add(type, x, z, ...rest) : null) };
   const kinds = ['cone', 'barrel', 'bench', 'trash', 'hydrant', 'mailbox', 'cart', 'planter', 'tree', 'sign'];
   const onAvenue = (x, z) => {
     for (let i = 0; i <= plan.cols; i++) if (Math.abs(x - roadX(plan, i)) < P_ROAD / 2 + 2.5) return true;

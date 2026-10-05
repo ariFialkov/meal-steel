@@ -4,8 +4,12 @@ import { Mode } from './base.js';
 import { scatterOpenProps } from '../world/city.js';
 import { BotDriver } from '../ai/bot.js';
 import { parkingBay } from '../world/setpieces.js';
-import { clamp, noise1 } from '../core/math.js';
+import { clamp, noise1, smoothstep, wrapAngle } from '../core/math.js';
 import { icon } from '../ui/icons.js';
+
+// Park-phase clock: at PARK_LIMIT every truck still due to survive is towed into a free spot so a round can never
+// stall (spots blocked by other trucks, someone wedged against a prop); everyone left over is out.
+const PARK_LIMIT = 15, HURRY_AT = 10, TOW_TIME = 1.5;
 
 export class ChairsMode extends Mode {
   setup() {
@@ -52,7 +56,7 @@ export class ChairsMode extends Mode {
     this.phase = 'music'; this.musicLen = rng.range(7, 13); this.phaseT = this.musicLen;
     g.hud.announce(`ROUND ${this.round + 1}`);
     g.audio.startMusic();
-    this.musicOn = true; this.parkToast = false;
+    this.musicOn = true; this.parkToast = false; this.hurried = false; this.towing = false;
   }
   stopMusic() {
     const g = this.game;
@@ -94,8 +98,10 @@ export class ChairsMode extends Mode {
     if (this.phase === 'between') { this.phaseT -= dt; this.driveAround(dt, t, 0.4); if (this.phaseT <= 0) this.startRound(); return; }
     // phase park
     this.phaseT += dt;
+    if (this.phaseT > HURRY_AT && !this.hurried) { this.hurried = true; g.hud.toast(`HURRY! ${PARK_LIMIT - HURRY_AT} S LEFT`, 'bad'); g.audio.whistle?.(); }
+    if (this.phaseT >= PARK_LIMIT && !this.towing) this.towIn();
     for (const tr of this.trucks) {
-      if (!tr.alive || tr.secured) continue;
+      if (!tr.alive || tr.secured || tr.tow) continue;
       const s = this.spotOf(tr);
       const inSpot = s && tr.speed < 5 && !s.securedBy;
       if (inSpot) {
@@ -107,7 +113,7 @@ export class ChairsMode extends Mode {
         if (!tr.isPlayer && tr.doomed) rate = 0; // the doomed never settle
         tr.progress = Math.min(tr.isPlayer && this.playerDoomed ? 0.93 : 1, tr.progress + rate * dt);
         if (tr.isPlayer && contested && !this.parkToast) { this.parkToast = true; g.hud.toast('CONTESTED!', 'bad'); }
-        if (tr.progress >= 1) { tr.secured = true; s.securedBy = tr; tr.mass *= 6; s.fill.material.color.set(0x3ad17c); g.fx.sparks(s.x, 1, s.z, 12, 0x3ad17c); if (tr.isPlayer) { g.hud.toast('SPOT SECURED!', 'good'); g.audio.coin(); } }
+        if (tr.progress >= 1) this.secure(tr, s);
         else s.fill.material.color.set(tr.def.body);
       } else {
         if (tr.spot && !tr.spot.securedBy) { tr.spot.fill.material.color.set(0x3aa9ff); if (tr.isPlayer && tr.progress > 0.3) g.hud.toast('BUMPED OUT!', 'bad'); }
@@ -116,8 +122,63 @@ export class ChairsMode extends Mode {
     }
     this.driveToSpots(dt, t);
     const allSecured = this.spots.every((s) => s.securedBy);
-    if (allSecured) this.endRound();
-    else if (this.phaseT > 30 && !p.secured && Math.floor(this.phaseT) % 6 === 0 && !this._nag) { this._nag = true; g.hud.toast('FIND A SPOT!', 'bad'); setTimeout(() => (this._nag = false), 2000); }
+    // last resort: whatever happens, the round closes shortly after the tow
+    if (allSecured || this.phaseT > PARK_LIMIT + TOW_TIME + 2.5) this.endRound();
+  }
+  secure(tr, s) {
+    const g = this.game;
+    tr.secured = true; tr.spot = s; tr.progress = 1; s.securedBy = tr; tr.mass *= 6;
+    s.fill.material.color.set(0x3ad17c); g.fx.sparks(s.x, 1, s.z, 12, 0x3ad17c);
+    if (tr.isPlayer) { g.hud.toast('SPOT SECURED!', 'good'); g.audio.coin(); }
+  }
+  /** Time's up: tow every truck that is due to survive into a free spot (ghosted, eased), shove squatters out. */
+  towIn() {
+    const g = this.game, p = this.player;
+    this.towing = true;
+    const due = this.trucks.filter((tr) => tr.alive && !tr.secured && (tr.isPlayer ? !this.playerDoomed : !tr.doomed));
+    const free = this.spots.filter((s) => !s.securedBy), claimed = new Set();
+    // closest pairs first, so each truck is pulled the shortest way
+    const pairs = [];
+    for (const tr of due) for (const s of free) pairs.push([Math.hypot(tr.x - s.x, tr.z - s.z) - (tr.spot === s ? 100 : 0), tr, s]);
+    pairs.sort((a, b) => a[0] - b[0]);
+    const done = new Set();
+    for (const [, tr, s] of pairs) {
+      if (done.has(tr) || claimed.has(s)) continue;
+      done.add(tr); claimed.add(s); this.startTow(tr, s);
+    }
+    g.hud.announce("TIME'S UP!"); g.audio.whistle();
+    if (p.tow) g.hud.toast('TOWED IN!', 'gold');
+    // trucks squatting on a claimed spot get bumped clear
+    for (const tr of this.trucks) {
+      if (!tr.alive || tr.secured || tr.tow) continue;
+      for (const s of claimed) {
+        const dx = tr.x - s.x, dz = tr.z - s.z, d = Math.hypot(dx, dz);
+        if (d < 6) { const k = 9 / (d || 1); tr.vx = (dx || 1) * k; tr.vz = dz * k; tr.spot = null; tr.progress = 0; }
+      }
+    }
+  }
+  startTow(tr, s) {
+    const g = this.game;
+    // park along the bay, nose whichever way is closer to the truck's current heading
+    const bay = s.mesh.rotation.y; let h1 = bay; if (Math.abs(wrapAngle(bay + Math.PI - tr.heading)) < Math.abs(wrapAngle(bay - tr.heading))) h1 = bay + Math.PI;
+    const tow = { s, t: 0, x0: tr.x, z0: tr.z, h0: tr.heading, h1: tr.heading + wrapAngle(h1 - tr.heading) };
+    tr.tow = tow; tr.ghost = true; tr.spot = s; tr.progress = 0;
+    s.fill.material.color.set(tr.def.body);
+    g.fx.ring(tr.x, 0.6, tr.z, 0xffd23f, 5);
+    tr.kinematicStep = (dt) => {
+      tow.t += dt;
+      const k = smoothstep(0, 1, Math.min(1, tow.t / TOW_TIME)), ox = tr.x, oz = tr.z;
+      tr.x = tow.x0 + (s.x - tow.x0) * k; tr.z = tow.z0 + (s.z - tow.z0) * k;
+      tr.y = tr.groundH + Math.sin(k * Math.PI) * 0.6; // a little lift, like it's on a hook
+      tr.heading = tow.h0 + (tow.h1 - tow.h0) * k;
+      tr.vx = (tr.x - ox) / dt; tr.vz = (tr.z - oz) / dt;
+      tr.progress = k;
+      if (tow.t >= TOW_TIME) {
+        tr.x = s.x; tr.z = s.z; tr.y = tr.groundH; tr.vx = tr.vz = 0; tr.angVel = 0;
+        tr.kinematicStep = null; tr.tow = null; tr.ghost = false;
+        this.secure(tr, s);
+      }
+    };
   }
   driveAround(dt, t, sf = 0.85) {
     const g = this.game;
@@ -133,7 +194,7 @@ export class ChairsMode extends Mode {
     for (const b of this.bots) {
       if (!b.alive) continue;
       const drv = this.drivers.get(b.id);
-      if (b.secured) { drv.stop(dt); continue; }
+      if (b.secured || b.tow) { if (b.secured) drv.stop(dt); continue; }
       let s = b.assigned;
       // survivors re-target if their spot got taken by someone else
       if (!b.doomed && s && s.securedBy && s.securedBy !== b) { const free = this.spots.filter((q) => !q.securedBy && !this.bots.some((o) => o !== b && o.alive && !o.doomed && o.assigned === q)); s = b.assigned = this.nearestSpot(b, free) || s; }
@@ -153,7 +214,7 @@ export class ChairsMode extends Mode {
         if (b.doomed) { sf = 0.75; b.hesit += dt; if (d < 4 && b.hesit > 2.5) { b.hesit = 0; b.assigned = this.rng.pick(this.spots.filter((q) => q !== s)) || s; } if (s.securedBy) { sf = 0.5; const away = Math.atan2(b.x - s.x, b.z - s.z); tx = s.x + Math.sin(away) * 7; tz = s.z + Math.cos(away) * 7; } }
         else if (s.securedBy === null) { sf = d < 7 ? 0.08 : 1.05; if (d < 2.0) sf = 0; }
         // long stall in the park phase: re-pick the nearest free spot every few seconds
-        if (!b.doomed && this.phaseT > 20 && Math.floor(this.phaseT) % 4 === 0 && !b._reassigned) { b._reassigned = true; const free = this.spots.filter((q) => !q.securedBy && !(this.player.spot === q && !this.playerDoomed) && !this.bots.some((o) => o !== b && o.alive && !o.doomed && o.assigned === q && Math.hypot(o.x - q.x, o.z - q.z) < 12)); const ns = this.nearestSpot(b, free); if (ns) s = b.assigned = ns; } else if (Math.floor(this.phaseT) % 4 !== 0) b._reassigned = false;
+        if (!b.doomed && this.phaseT > 6 && Math.floor(this.phaseT) % 3 === 0 && !b._reassigned) { b._reassigned = true; const free = this.spots.filter((q) => !q.securedBy && !(this.player.spot === q && !this.playerDoomed) && !this.bots.some((o) => o !== b && o.alive && !o.doomed && o.assigned === q && Math.hypot(o.x - q.x, o.z - q.z) < 12)); const ns = this.nearestSpot(b, free); if (ns) s = b.assigned = ns; } else if (Math.floor(this.phaseT) % 3 !== 0) b._reassigned = false;
         // another bot sitting in my spot? (doomed ones) nudge them
         for (const o of this.trucks) { if (o === b || !o.alive || o.secured) continue; if (!b.doomed && Math.hypot(o.x - s.x, o.z - s.z) < 3 && d < 12 && d > 3) { tx = o.x; tz = o.z; sf = 1.2; aggressive = true; } }
       }
@@ -164,7 +225,7 @@ export class ChairsMode extends Mode {
     const p = this.player, g = this.game;
     if (!p.alive) return;
     if (this.phase !== 'park') { const a = t * 0.3 + 1; this.playerDriver().drive(this.ring.x + Math.cos(a) * 26, this.ring.z + Math.sin(a) * 26, 0.8, dt, t, { world: g.world, avoidTrucks: this.trucks }); return; }
-    if (p.secured) { this.playerDriver().stop(dt); return; }
+    if (p.secured || p.tow) { if (p.secured) this.playerDriver().stop(dt); return; }
     const free = this.spots.filter((s) => !s.securedBy);
     const s = p.spot && !p.spot.securedBy ? p.spot : this.nearestSpot(p, free);
     if (!s) { this.playerDriver().stop(dt); return; }
@@ -174,6 +235,7 @@ export class ChairsMode extends Mode {
   }
   endRound() {
     const g = this.game, p = this.player;
+    for (const tr of this.trucks) if (tr.tow) { tr.kinematicStep = null; tr.tow = null; tr.ghost = false; if (tr.alive) this.secure(tr, tr.spot); }
     const out = this.alive().filter((tr) => !tr.secured);
     for (const tr of out) {
       tr.alive = false; tr.eliminatedRound = this.round; this.elimOrder.push(tr);
@@ -211,7 +273,7 @@ export class ChairsMode extends Mode {
     const alive = this.alive();
     const rows = this.trucks.slice().sort((a, b) => (b.alive - a.alive) || ((b.secured ? 1 : 0) - (a.secured ? 1 : 0))).map((tr, i) => ({ name: tr.name, color: this.colorOf(tr), you: tr.isPlayer, score: tr.alive ? (tr.secured ? '✓' : (tr.spot ? Math.round(tr.progress * 100) + '%' : '')) : 'OUT', pos: i + 1, out: !tr.alive }));
     const secured = this.spots.filter((s) => s.securedBy).length;
-    const timer = this.phase === 'music' ? icon('note', 'ico-inline') + ' DRIVE' : this.phase === 'park' ? 'PARK!' : `ROUND ${this.round + 1}`;
+    const timer = this.phase === 'music' ? icon('note', 'ico-inline') + ' DRIVE' : this.phase === 'park' ? (this.towing ? "TIME'S UP!" : `PARK! ${Math.max(0, Math.ceil(PARK_LIMIT - this.phaseT))}`) : `ROUND ${this.round + 1}`;
     return { rows: rows.slice(0, 10), timer, sub: `Round ${this.round + 1}/${this.schedule.length} · ${alive.length} trucks · ${secured}/${this.spots.length} spots` };
   }
   drawMinimap(ctx, size) {

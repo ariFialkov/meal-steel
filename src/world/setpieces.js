@@ -155,6 +155,7 @@ export function buildArena(scene, A) {
 // ------------------------------------------------------------------ rumble serving spot
 /** Serving bay: painted pad (recoloured by the mode), queue of customers, umbrella table, menu board. */
 export function servingSpot(rng) {
+  // (customers are animated separately by the mode: see modes/serving.js)
   const grp = new THREE.Group();
   const pad = new THREE.Mesh(new THREE.BoxGeometry(5, 0.08, 8), new THREE.MeshStandardMaterial({ color: 0x3aa9ff, roughness: 0.6, transparent: true, opacity: 0.85 }));
   pad.position.y = 0.26; pad.receiveShadow = true; grp.add(pad);
@@ -162,8 +163,6 @@ export function servingSpot(rng) {
   const line = (x0, z0, x1, z1) => B.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], [0, 1, 0], null, WHITE);
   line(-2.6, -4.1, 2.6, -3.85); line(-2.6, 3.85, 2.6, 4.1); line(-2.6, -4.1, -2.35, 4.1); line(2.35, -4.1, 2.6, 4.1);
   for (let k = -3; k <= 3; k++) line(-2.6 + 0.0, k * 1.0 - 0.06, -2.1, k * 1.0 + 0.06);
-  // customers queueing on the right side
-  for (let k = 0; k < 4; k++) person(B, 3.6 + rng.range(-0.15, 0.15), -2.4 + k * 1.3, -Math.PI / 2 + rng.range(-0.3, 0.3), rng, rng.range(0.92, 1.08));
   // umbrella table
   const tx = -3.9, tz = 2.5;
   B.cyl(tx, 0.55, tz, 0.07, 1.1, IRON, 8); B.cyl(tx, 1.12, tz, 0.55, 0.06, WHITE, 16); B.cyl(tx, 2.0, tz, 0.035, 2.0, '#dddddd', 8);
@@ -290,4 +289,112 @@ export function planarUV(geo, tile) {
   for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / tile; uv[i * 2 + 1] = p.getZ(i) / tile; }
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   return geo;
+}
+
+// ------------------------------------------------------------------ rumble jump ramp
+/** Wrestling-style kicker ramp for a StaticWorld ramp record r. */
+export function jumpRamp(r) {
+  const B = new GeoBuilder(), L = r.len, hw = r.hw, H = r.height, lx = -r.uz, lz = r.ux;
+  const P = (along, lat, y) => [r.cx + r.ux * (along - L / 2) + lx * lat, y, r.cz + r.uz * (along - L / 2) + lz * lat];
+  const up = Math.atan2(H, L), nSlope = [-r.ux * Math.sin(up), Math.cos(up), -r.uz * Math.sin(up)];
+  // deck in alternating stripes
+  const strips = 8;
+  for (let k = 0; k < strips; k++) {
+    const a0 = (k / strips) * L, a1 = ((k + 1) / strips) * L;
+    B.quad(P(a0, -hw, H * a0 / L), P(a0, hw, H * a0 / L), P(a1, hw, H * a1 / L), P(a1, -hw, H * a1 / L), nSlope, null, k % 2 ? '#ff4d57' : '#f4f4f4');
+  }
+  // chevrons pointing up the ramp
+  for (let k = 0; k < 3; k++) {
+    const a = L * (0.22 + k * 0.22), y = H * a / L + 0.02, w = hw * 0.55;
+    B.tri(P(a + 1.1, 0, y + 1.1 * H / L), P(a, -w, y), P(a, w, y), nSlope, null, '#ffd626');
+  }
+  // side walls and lip face
+  const side = (s) => { const n = [lx * s, 0, lz * s]; B.tri(P(0, s * hw, 0), P(L, s * hw, 0), P(L, s * hw, H), n, null, '#22304a'); };
+  side(1); side(-1);
+  B.quad(P(L, -hw, 0), P(L, hw, 0), P(L, hw, H), P(L, -hw, H), [r.ux, 0, r.uz], null, '#ffd626');
+  for (let k = 0; k < 5; k++) { const l0 = -hw + (k * 2 * hw) / 5; B.quad(P(L + 0.01, l0, H * 0.15), P(L + 0.01, l0 + hw * 0.2, H * 0.15), P(L + 0.01, l0 + hw * 0.2 + 0.4, H * 0.85), P(L + 0.01, l0 + 0.4, H * 0.85), [r.ux, 0, r.uz], null, '#22304a'); }
+  // steel trim rails along the edges
+  for (const s of [-1, 1]) { const a = P(0, s * (hw + 0.08), 0.1), b = P(L, s * (hw + 0.08), H + 0.1), len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); B.geo(prim('cyl8'), xform((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, r.yaw, Math.PI / 2 - up, 0, 0.16, len, 0.16), STEEL); }
+  // flags on the lip corners
+  for (const s of [-1, 1]) { const f = P(L, s * hw, H); B.cyl(f[0], H + 1.2, f[2], 0.05, 2.4, STEEL, 6); B.tri([f[0], H + 2.4, f[2]], [f[0], H + 1.8, f[2]], [f[0] + r.ux * 1.0, H + 2.1, f[2] + r.uz * 1.0], [lx, 0, lz], null, '#ff7a1a'); B.tri([f[0], H + 2.4, f[2]], [f[0] + r.ux * 1.0, H + 2.1, f[2] + r.uz * 1.0], [f[0], H + 1.8, f[2]], [-lx, 0, -lz], null, '#ff7a1a'); }
+  return meshOf(B);
+}
+
+// ------------------------------------------------------------------ soccer: team markers and neon scoreboard
+const UNDERGLOW = {};
+function glowTexture(hex) {
+  if (UNDERGLOW[hex]) return UNDERGLOW[hex];
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const col = new THREE.Color(hex), rgb = `${Math.round(col.r * 255)},${Math.round(col.g * 255)},${Math.round(col.b * 255)}`;
+  // soft team-coloured pool with a crisp rim, readable on sunny turf as well as at night
+  const g = x.createRadialGradient(64, 64, 8, 64, 64, 60); g.addColorStop(0, `rgba(${rgb},0.75)`); g.addColorStop(0.7, `rgba(${rgb},0.5)`); g.addColorStop(0.84, `rgba(${rgb},0.95)`); g.addColorStop(0.9, `rgba(255,255,255,0.9)`); g.addColorStop(0.95, `rgba(${rgb},0.8)`); g.addColorStop(1, `rgba(${rgb},0)`);
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return (UNDERGLOW[hex] = t);
+}
+/** Team identity that leaves the truck's skin alone: neon underglow, a rear flag on a whip pole and a roof beacon. */
+export function teamMarker(hex) {
+  const grp = new THREE.Group();
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 7.6), new THREE.MeshBasicMaterial({ map: glowTexture(hex), transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = 0.05; glow.renderOrder = 1; grp.add(glow);
+  // short whip pole on the rear corner, kept below the chase camera's sight line so it never covers the ball
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 1.6, 6), new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.6, roughness: 0.3 }));
+  pole.position.set(-1.05, 3.5, -2.55); grp.add(pole);
+  const flagGeo = new THREE.PlaneGeometry(1.0, 0.62, 8, 1); flagGeo.translate(0.5, 0, 0);
+  const flag = new THREE.Mesh(flagGeo, new THREE.MeshStandardMaterial({ color: hex, side: THREE.DoubleSide, roughness: 0.7, emissive: hex, emissiveIntensity: 0.35 }));
+  flag.position.set(-1.05, 3.95, -2.55); flag.rotation.y = Math.PI / 2; grp.add(flag);
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: hex, toneMapped: false }));
+  beacon.position.set(-1.05, 4.35, -2.55); grp.add(beacon);
+  grp.userData = { flag, base: flagGeo.attributes.position.array.slice() };
+  return grp;
+}
+/** Wave a team flag (cheap vertex wobble). */
+export function waveFlag(marker, t, speed) {
+  const { flag, base } = marker.userData, p = flag.geometry.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = base[i * 3]; p.setZ(i, Math.sin(x * 4 - t * (6 + speed * 0.2)) * 0.12 * x); }
+  p.needsUpdate = true;
+}
+
+/** Giant neon scoreboard on a truss. update({ blue, red, time, note }) redraws only when something changed. */
+export class NeonScoreboard {
+  constructor() {
+    this.group = new THREE.Group();
+    const W = 30, H = 12;
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 410; this.canvas = c; this.ctx = c.getContext('2d');
+    this.tex = new THREE.CanvasTexture(c); this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.anisotropy = 8;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: this.tex, toneMapped: false }));
+    screen.position.y = 13; this.group.add(screen);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(W + 1.2, H + 1.2, 0.8), new THREE.MeshStandardMaterial({ color: 0x1a1f2b, roughness: 0.6, metalness: 0.3 }));
+    back.position.set(0, 13, -0.45); this.group.add(back);
+    // neon tubes around the frame
+    const tube = (w, h, x, y, color) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), new THREE.MeshBasicMaterial({ color, toneMapped: false })); m.position.set(x, y, 0.15); this.group.add(m); };
+    tube(W + 0.6, 0.25, 0, 13 + H / 2 + 0.35, 0x2f9bff); tube(W + 0.6, 0.25, 0, 13 - H / 2 - 0.35, 0xff4d57);
+    tube(0.25, H + 0.9, -W / 2 - 0.35, 13, 0x2f9bff); tube(0.25, H + 0.9, W / 2 + 0.35, 13, 0xff4d57);
+    // truss legs
+    const B = new GeoBuilder();
+    for (const sx of [-W / 2 + 2, W / 2 - 2]) {
+      for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) B.cyl(sx + dx, 3.6, -1.4 + dz, 0.09, 7.2, STEEL, 8);
+      for (let y = 0.6; y < 7; y += 1.3) { B.geo(prim('cyl8'), xform(sx, y + 0.65, -2.0, 0, 0, Math.atan2(1.2, 1.3), 0.06, Math.hypot(1.2, 1.3), 0.06), STEEL); B.geo(prim('cyl8'), xform(sx, y + 0.65, -0.8, 0, 0, -Math.atan2(1.2, 1.3), 0.06, Math.hypot(1.2, 1.3), 0.06), STEEL); }
+      B.box(sx - 1.2, 0, -2.6, sx + 1.2, 0.5, -0.2, '#9e988e');
+    }
+    this.group.add(meshOf(B));
+    this.key = '';
+    if (document.fonts) document.fonts.load('48px "Luckiest Guy"').then(() => { this.key = ''; }).catch(() => {});
+  }
+  update({ blue, red, time, note = '' }) {
+    const key = `${blue}|${red}|${time}|${note}`;
+    if (key === this.key) return; this.key = key;
+    const x = this.ctx, W = 1024, H = 410;
+    x.fillStyle = '#05070d'; x.fillRect(0, 0, W, H);
+    x.fillStyle = 'rgba(255,255,255,0.035)'; for (let i = 0; i < W; i += 8) x.fillRect(i, 0, 3, H); for (let j = 0; j < H; j += 8) x.fillRect(0, j, W, 3);
+    const neon = (txt, px, py, size, color, align = 'center') => {
+      x.font = `${size}px "Luckiest Guy", "Arial Black", sans-serif`; x.textAlign = align; x.textBaseline = 'middle';
+      x.shadowColor = color; x.shadowBlur = 34; x.fillStyle = color; x.fillText(txt, px, py); x.shadowBlur = 12; x.fillText(txt, px, py);
+      x.shadowBlur = 0; x.fillStyle = 'rgba(255,255,255,0.85)'; x.font = `${size * 0.96}px "Luckiest Guy", "Arial Black", sans-serif`; x.fillText(txt, px, py);
+    };
+    neon('BLUE', 180, 80, 70, '#2f9bff'); neon('RED', W - 180, 80, 70, '#ff4d57');
+    neon(String(blue), 180, 230, 200, '#2f9bff'); neon(String(red), W - 180, 230, 200, '#ff4d57');
+    neon(time, W / 2, 200, 110, '#ffd626'); neon('TIME', W / 2, 92, 54, '#ffffff');
+    if (note) neon(note, W / 2, 340, 52, '#ff7a1a');
+    this.tex.needsUpdate = true;
+  }
 }

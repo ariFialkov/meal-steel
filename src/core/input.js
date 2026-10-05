@@ -4,7 +4,7 @@ export class Input {
     this.keys = new Set();
     this.steer = 0; this.throttle = 0; this.brake = false;
     this.turboPressed = false; this.specialPressed = false;
-    this._turboQueued = false; this._specialQueued = false;
+    this._turboQueued = false; this._specialQueued = false; this._camQueued = false; this.camPressed = false;
     this.joy = { active: false, id: null, cx: 0, cy: 0, x: 0, y: 0 };
     this.touchButtons = { brake: false };
     this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -15,11 +15,22 @@ export class Input {
       this.keys.add(e.code);
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this._turboQueued = true;
       if (e.code === 'Space' || e.code === 'KeyE') this._specialQueued = true;
+      if (e.code === 'KeyC' || e.code === 'KeyQ') this._camQueued = true;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       this.onAnyInput?.();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    const releaseAll = () => { this.keys.clear(); this.joy.active = false; this.joy.x = 0; this.joy.y = 0; this.touchButtons.brake = false; };
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+    this.releaseAll = releaseAll;
+  }
+
+  /** Camera-switch button (soccer); works with touch and mouse. */
+  bindCamButton(el) {
+    const fire = (e) => { e.preventDefault(); e.stopPropagation(); this._camQueued = true; };
+    el.addEventListener('touchstart', fire, { passive: false });
+    el.addEventListener('mousedown', fire);
   }
 
   bindTouch(joyEl, stickEl, btnTurbo, btnSpecial, btnBrake) {
@@ -88,6 +99,7 @@ export class Input {
     this.handbrake = k.has('KeyS') || k.has('ArrowDown') || this.touchButtons.brake;
     this.turboPressed = this._turboQueued; this._turboQueued = false;
     this.specialPressed = this._specialQueued; this._specialQueued = false;
+    this.camPressed = this._camQueued; this._camQueued = false;
     if (!this.enabled) { this.steer = 0; this.throttle = 0; this.brake = false; this.turboPressed = false; this.specialPressed = false; }
     return this;
   }

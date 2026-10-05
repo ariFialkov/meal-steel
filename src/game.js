@@ -1,7 +1,7 @@
 // A single match: scene, weather, city, trucks, physics loop, event routing to the active mode.
 import * as THREE from 'three';
 import { RNG } from './core/rng.js';
-import { clamp, damp } from './core/math.js';
+import { clamp, damp, smoothstep, wrapAngle } from './core/math.js';
 import { TRUCKS, TRUCK_BY_ID } from './data/trucks.js';
 import { makePlan } from './world/layouts.js';
 import { buildCity } from './world/city.js';
@@ -76,6 +76,7 @@ export class Game {
     this.hud.announce('3', true);
     this.audio.startEngine();
     this.input.enabled = false;
+    this.input.releaseAll?.();
     // initial camera
     this.updateCamera(1, true);
   }
@@ -97,6 +98,10 @@ export class Game {
     let steps = 0;
     while (this.accum >= STEP && steps < 4) { this.step(STEP); this.accum -= STEP; steps++; }
     if (steps === 4) this.accum = 0;
+    // draw trucks (and the mode's moving objects) between the last two physics states for smooth motion
+    const alpha = this.accum / STEP;
+    for (const tr of this.trucks) tr.applyRender(alpha);
+    this.mode.applyRender?.(alpha);
     this.updateCamera(dt);
     this.hud.update(this, dt);
     if (this.mode.finished) {
@@ -120,6 +125,7 @@ export class Game {
       if (input.specialPressed) this.specials.use(p, this.trucks, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s));
     } else { p.control.throttle = 0; p.control.steer = 0; p.control.turbo = false; }
 
+    if (input.camPressed && this.mode.toggleCamera) this.mode.toggleCamera();
     if (this.autopilot && this.mode.autopilot) this.mode.autopilot(dt, t);
     this.mode.update(dt, t);
 
@@ -134,7 +140,7 @@ export class Game {
     for (let i = 0; i < T.length; i++) {
       if (!T[i].alive) continue;
       for (let j = i + 1; j < T.length; j++) {
-        if (!T[j].alive) continue;
+        if (!T[j].alive || T[i].ghost || T[j].ghost) continue;
         const r = collideTrucks(T[i], T[j]);
         if (r && r.strength > 0) this.onTruckHit(T[i], T[j], r);
       }
@@ -143,7 +149,7 @@ export class Game {
     for (const tr of this.trucks) {
       for (const ev of tr.events) {
         if (ev.type === 'turbo') { if (tr.isPlayer || this.near(tr)) this.audio.boost(); }
-        else if (ev.type === 'wall') { if (ev.strength > 0.4) { this.fx.sparks(ev.x ?? tr.x, tr.y + 0.6, ev.z ?? tr.z, 8); if (tr.isPlayer) { this.audio.hit(ev.strength); this.shake(ev.strength * 0.5); } else if (this.near(tr)) this.audio.hit(ev.strength * 0.5); } }
+        else if (ev.type === 'wall') { this.mode.onWallHit?.(tr, ev.strength); if (ev.strength > 0.4) { this.fx.sparks(ev.x ?? tr.x, tr.y + 0.6, ev.z ?? tr.z, 8); if (tr.isPlayer) { this.audio.hit(ev.strength); this.shake(ev.strength * 0.5); } else if (this.near(tr)) this.audio.hit(ev.strength * 0.5); } }
         else if (ev.type === 'land') { this.fx.smoke(tr.x, tr.y + 0.3, tr.z, 5, 0x999999, 0.6); if (tr.isPlayer) this.audio.thud(); }
       }
       tr.events.length = 0;
@@ -191,43 +197,77 @@ export class Game {
     this.mode.onPropHit(tr, prop, how, strength);
   }
 
+  /**
+   * Camera rig. The camera is placed on a yaw / distance / height around a focus point; each of those is damped
+   * separately so nothing snaps: building occlusion only shortens the distance (fast in, slow out), the yaw follows
+   * the truck's heading smoothly (never the raw velocity, which flips when bouncing off a wall), the pre-race shot
+   * sweeps from a low front three-quarter view into the chase position exactly as the countdown ends, and the
+   * finish shot orbits slowly from wherever the chase camera was.
+   */
   updateCamera(dt, snap = false) {
     const p = this.mode.cameraTarget || this.player;
     const cam = this.camera;
     const w = this.renderer.domElement;
     const aspect = w.clientWidth / Math.max(1, w.clientHeight);
     if (cam.aspect !== aspect) { cam.aspect = aspect; cam.updateProjectionMatrix(); }
-    let tx, ty, tz, lx, ly, lz;
-    if (this.mode.finished || !p.alive || this.state === 'countdown') {
-      this.camOrbit += dt * (this.state === 'countdown' ? 0.35 : 0.5);
-      const r = 14, a = this.camOrbit + (this.state === 'countdown' ? p.heading + Math.PI * 0.75 : 0);
-      tx = p.x + Math.sin(a) * r; tz = p.z + Math.cos(a) * r; ty = p.y + 6;
-      lx = p.x; ly = p.y + 1.5; lz = p.z;
+    const fx = p.rx ?? p.x, fy = p.ry ?? p.y, fz = p.rz ?? p.z, fh = p.rh ?? p.heading;
+    const chaseDist = 10.5 + clamp(p.speed / p.maxSpeed, 0, 1.3) * 3.5, chaseH = 5.2 + (p.onOverpass ? 0.6 : 0);
+    // target yaw (direction the camera looks along), distance and height
+    let yaw, dist, height, lookAhead = 7, lookH = 1.4, yawRate = 3.2;
+    const cinematic = this.mode.finished || !p.alive || p.ko;
+    if (this.state === 'countdown') {
+      const t = smoothstep(0, 1, 1 - this.countdown / 3.6);
+      yaw = fh + Math.PI * 0.8 * (1 - t); dist = 8.5 + (chaseDist - 8.5) * t; height = 1.8 + (chaseH - 1.8) * t; lookAhead = 7 * t; lookH = 1.6;
+      yawRate = 1e3; // fully scripted
+    } else if (cinematic) {
+      this.camOrbit += dt * 0.22;
+      yaw = (this.camYawAtFinish ?? (this.camYawAtFinish = this.camYaw ?? fh)) + this.camOrbit; dist = 13; height = 5.5; lookAhead = 0; lookH = 1.6; yawRate = 1e3;
     } else {
-      const back = 10.5 + clamp(p.speed / p.maxSpeed, 0, 1.3) * 3.5;
-      // follow velocity direction slightly when drifting
-      let hx = p.fwdX, hz = p.fwdZ;
-      if (p.speed > 6) { const k = 0.35; hx = hx * (1 - k) + (p.vx / p.speed) * k; hz = hz * (1 - k) + (p.vz / p.speed) * k; const l = Math.hypot(hx, hz) || 1; hx /= l; hz /= l; }
-      tx = p.x - hx * back; tz = p.z - hz * back; ty = p.y + 5.2 + (p.onOverpass ? 0.6 : 0);
-      lx = p.x + hx * 7; ly = p.y + 1.4; lz = p.z + hz * 7;
-      if (this.mode.cameraMode === 'ball' && this.mode.ball) { const b = this.mode.ball; const k = 0.35; lx = lx * (1 - k) + b.x * k; lz = lz * (1 - k) + b.z * k; }
+      this.camOrbit = 0; this.camYawAtFinish = undefined;
+      yaw = fh;
+      if (p.fwdSpeed > 8 && p.speed > 1) { const vy = Math.atan2(p.vx, p.vz); yaw = fh + wrapAngle(vy - fh) * 0.3; }
+      dist = chaseDist; height = chaseH;
+      const b = this.mode.cameraMode === 'ball' && this.mode.ball;
+      if (b) {
+        // ball cam (Rocket League style): the camera sits behind the truck on the line from the ball through the truck,
+        // so the ball stays framed ahead; very close to the ball the yaw relaxes back to the heading to avoid whipping
+        const bx = this.mode.ballMesh?.position.x ?? b.x, bz = this.mode.ballMesh?.position.z ?? b.z;
+        const dx = bx - fx, dz = bz - fz, d = Math.hypot(dx, dz);
+        const w = smoothstep(2.5, 7, d);
+        yaw = fh + wrapAngle(Math.atan2(dx, dz) - fh) * w; yawRate = 4.5;
+        dist = chaseDist + 1; height = chaseH + 0.6 + clamp((b.y - 2) * 0.25, 0, 3);
+      }
+    }
+    if (snap || this.camYaw === undefined) { this.camYaw = yaw; this.camDist = dist; this.camH = height; }
+    else {
+      this.camYaw = yawRate > 100 ? yaw : this.camYaw + wrapAngle(yaw - this.camYaw) * (1 - Math.exp(-yawRate * dt));
+      this.camH = damp(this.camH, height, 4, dt);
+    }
+    // occlusion: the camera may come in quickly but eases back out
+    const sx = -Math.sin(this.camYaw), sz = -Math.cos(this.camYaw);
+    const hit = this.world.rayDistance(fx, fz, sx, sz, dist + 1);
+    const allowed = Math.max(3.5, Math.min(dist, hit - 1.2));
+    this.camDist = snap ? allowed : damp(this.camDist, allowed, allowed < this.camDist ? 14 : 2.5, dt);
+    const occluded = 1 - this.camDist / dist;
+    let tx = fx + sx * this.camDist, tz = fz + sz * this.camDist, ty = fy + this.camH + occluded * 4;
+    let lx = fx - sx * lookAhead, ly = fy + lookH, lz = fz - sz * lookAhead;
+    if (!cinematic && this.state !== 'countdown' && this.mode.cameraMode === 'ball' && this.mode.ball) {
+      // look between the truck and the ball (ball weighted), raised with the ball when it is in the air
+      // (capped so the truck itself always stays in the lower part of the frame)
+      const bp = this.mode.ballMesh?.position ?? this.mode.ball, dx = bp.x - fx, dz = bp.z - fz, d = Math.hypot(dx, dz) || 1, ahead = Math.min(d * 0.5, 10);
+      lx = fx + (dx / d) * ahead; lz = fz + (dz / d) * ahead; ly = fy + lookH + clamp((bp.y - 1) * 0.3, 0, 2.5);
     }
     if (snap) { this.camPos.set(tx, ty, tz); this.camLook.set(lx, ly, lz); }
     else {
-      const lam = 5.5;
-      this.camPos.x = damp(this.camPos.x, tx, lam, dt); this.camPos.y = damp(this.camPos.y, ty, 6, dt); this.camPos.z = damp(this.camPos.z, tz, lam, dt);
-      this.camLook.x = damp(this.camLook.x, lx, 9, dt); this.camLook.y = damp(this.camLook.y, ly, 9, dt); this.camLook.z = damp(this.camLook.z, lz, 9, dt);
+      this.camPos.x = damp(this.camPos.x, tx, 12, dt); this.camPos.y = damp(this.camPos.y, ty, 8, dt); this.camPos.z = damp(this.camPos.z, tz, 12, dt);
+      this.camLook.x = damp(this.camLook.x, lx, 10, dt); this.camLook.y = damp(this.camLook.y, ly, 10, dt); this.camLook.z = damp(this.camLook.z, lz, 10, dt);
     }
-    // keep the camera out of buildings: pull in if blocked
-    const dx = this.camPos.x - p.x, dz = this.camPos.z - p.z, d = Math.hypot(dx, dz) || 1;
-    const hit = this.world.rayDistance(p.x, p.z, dx / d, dz / d, d);
-    if (hit < d) { const k = Math.max(0.3, (hit - 1) / d); this.camPos.x = p.x + dx * k; this.camPos.z = p.z + dz * k; this.camPos.y = Math.max(this.camPos.y, p.y + 4 + (1 - k) * 6); }
     cam.position.copy(this.camPos);
     if (this.shakeT > 0) { this.shakeT -= dt; cam.position.x += (Math.random() - 0.5) * this.shakeT * 1.2; cam.position.y += (Math.random() - 0.5) * this.shakeT * 1.2; }
     cam.lookAt(this.camLook);
     // sun follows
-    this.sun.position.set(p.x + 60, 90, p.z + 40); this.sun.target.position.set(p.x, 0, p.z); this.sun.target.updateMatrixWorld();
-    if (this.headlight) { this.headlight.position.set(this.player.x + this.player.fwdX * 2.5, this.player.y + 1.4, this.player.z + this.player.fwdZ * 2.5); this.headlight.target.position.set(this.player.x + this.player.fwdX * 30, 0, this.player.z + this.player.fwdZ * 30); this.headlight.target.updateMatrixWorld(); }
+    this.sun.position.set(fx + 60, 90, fz + 40); this.sun.target.position.set(fx, 0, fz); this.sun.target.updateMatrixWorld();
+    if (this.headlight) { const pl = this.player, px = pl.rx ?? pl.x, pz = pl.rz ?? pl.z; this.headlight.position.set(px + pl.fwdX * 2.5, pl.y + 1.4, pz + pl.fwdZ * 2.5); this.headlight.target.position.set(px + pl.fwdX * 30, 0, pz + pl.fwdZ * 30); this.headlight.target.updateMatrixWorld(); }
   }
 
   render() { this.props.cull(this.camera); this.renderer.render(this.scene, this.camera); }

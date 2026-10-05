@@ -28,6 +28,7 @@ export class StaticWorld {
     this.aabbs = [];
     this.hash = new SpatialHash(24);
     this.overpasses = [];
+    this.ramps = [];
     this._q = [];
     this.bounds = { minX: -300, maxX: 300, minZ: -300, maxZ: 300 };
   }
@@ -78,9 +79,25 @@ export class StaticWorld {
     this.overpasses.push(op);
     return op;
   }
+  /** Jump ramp: a wedge rising along (dirX, dirZ) from 0 to height over len, ending in a sheer lip. */
+  addRamp(cx, cz, yaw, len, width, height) {
+    const r = { cx, cz, yaw, ux: Math.sin(yaw), uz: Math.cos(yaw), len, hw: width / 2, height };
+    this.ramps.push(r); return r;
+  }
+  /** Ramp height at (x, z), or -1 when outside every ramp. */
+  rampHeight(x, z) {
+    let best = -1;
+    for (const r of this.ramps) {
+      const dx = x - r.cx, dz = z - r.cz, along = dx * r.ux + dz * r.uz + r.len / 2, lat = -dx * r.uz + dz * r.ux;
+      if (along < 0 || along > r.len || Math.abs(lat) > r.hw) continue;
+      best = Math.max(best, r.height * (along / r.len));
+    }
+    return best;
+  }
   /** Elevation of the drivable surface at (x,z). Also returns which overpass + lateral offset. */
   elevation(x, z, out = { h: 0, op: null, lat: 0, along: 0 }) {
-    out.h = 0; out.op = null;
+    out.h = 0; out.op = null; out.ramp = false;
+    if (this.ramps.length) { const rh = this.rampHeight(x, z); if (rh > 0) { out.h = rh; out.ramp = true; } }
     for (const op of this.overpasses) {
       const rx = x - op.ax, rz = z - op.az;
       const along = rx * op.ux + rz * op.uz;

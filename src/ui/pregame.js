@@ -21,11 +21,12 @@ export async function runPregame(params, outcome, bet, audio, playerDef, signal,
     { label: 'MODE', pool: Object.values(MODES).map((m) => icon(m.icon, 'ico-inline') + ' ' + m.name), final: icon(mode.icon, 'ico-inline') + ' ' + mode.name },
     { label: 'NEIGHBOURHOOD', pool: NEIGHBOURHOODS.map((n) => n.name), final: params.neighbourhood.name },
     { label: 'WEATHER', pool: WEATHERS.map((w) => w.name), final: params.weather.name },
-    { label: 'PLAYERS', pool: ['4', '6', '8', '10', '12', '14'], final: String(params.players) + (mode.teams ? ` (${params.players / 2}v${params.players / 2})` : '') },
+    { label: 'PLAYERS', pool: ['4', '5', '6', '8', '10', '12', '14'], final: String(params.players) + (mode.teams ? ` (${params.players / 2}v${params.players / 2})` : '') },
   ];
   if (params.time) reels.push({ label: 'TIME', pool: ['30s', '90s', '150s', '180s'], final: params.time + 's' });
   if (params.mode === 'chairs') reels.push({ label: 'ROUNDS', pool: ['4', '5'], final: String(params.rounds) });
-  reels.push({ label: 'PAYOUT', pool: mode.winners.map(payoutStr).concat(mode.teams ? ['TEAM 2:1'] : []), final: mode.teams ? 'TEAM 2:1' : payoutStr(params.winners) });
+  const schemes = mode.winnersByPlayers ? Object.values(mode.winnersByPlayers).flat() : mode.winners;
+  reels.push({ label: 'PAYOUT', pool: schemes.map(payoutStr).concat(mode.teams ? ['TEAM 2:1'] : []), final: mode.teams ? 'TEAM 2:1' : payoutStr(params.winners) });
   reels.push({ label: 'POT', pool: [50, 100, 240, 500, 800, 1600].map(fmtMoney), final: fmtMoney(outcome.pot) });
   const reelEls = reels.map((r) => {
     const d = document.createElement('div'); d.className = 'reel'; d.innerHTML = `<label>${r.label}</label><div class="win"><div class="val">${r.pool[0]}</div></div>`;

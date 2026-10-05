@@ -12,11 +12,20 @@ export const MODES = {
   },
   rumble: {
     id: 'rumble', name: 'Rumble', icon: 'burst',
-    players: { fixed: 12 },
+    players: { options: [5, 6, 8, 10, 12] },
     time: { options: [30, 90, 180] },
     winners: [[1]],
+    // fair schemes per lobby size (shares sum to 1, every placement equally likely, so RTP stays 100%).
+    // 7, 9 and 11 are skipped: their splits do not come out as clean multiples of the bet.
+    winnersByPlayers: {
+      5: [[1]],                                   // 5x
+      6: [[1], [0.75, 0.25]],                     // 6x | 4.5x 1.5x
+      8: [[1], [0.75, 0.25], [0.5, 0.3, 0.2]],    // 8x | 6x 2x | 4x 2.4x 1.6x
+      10: [[1], [0.6, 0.3, 0.1]],                 // 10x | 6x 3x 1x
+      12: [[1], [0.5, 0.3, 0.2]],                 // 12x | 6x 3.6x 2.4x
+    },
     teams: false,
-    blurb: 'Smash, serve and survive. Most points when the clock hits zero wins.',
+    blurb: 'Smash, serve and survive. Get knocked out and your points do not count.',
   },
   soccer: {
     id: 'soccer', name: 'Soccer', icon: 'ball',
@@ -73,7 +82,7 @@ export function rollGameParams(modeId, rng) {
   else players = rng.int(m.players.min, m.players.max);
   let time = null;
   if (m.time) time = m.time.fixed ?? rng.pick(m.time.options);
-  const winners = rng.pick(m.winners);
+  const winners = rng.pick(m.winnersByPlayers?.[players] || m.winners);
   const neighbourhood = rng.pick(NEIGHBOURHOODS);
   const weather = (typeof window !== 'undefined' && window.__forceWeather && WEATHERS.find((w) => w.name === window.__forceWeather)) || rng.pick(WEATHERS);
   let rounds = null, spotSchedule = null;
