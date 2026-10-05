@@ -130,7 +130,8 @@ export class RumbleMode extends Mode {
     const { group: grp, pad } = servingSpot(rng);
     grp.position.set(x, 0, z); grp.rotation.y = a + Math.PI / 2; grp.scale.setScalar(0.01);
     this.spotGroup.add(grp);
-    this.spots.push({ x, z, mesh: grp, life: this.rng.range(20, 28), age: 0, occupant: null, occupiedT: 0, pad, queue: new ServeQueue(grp, rng) });
+    const queue = new ServeQueue(grp, rng); queue.onPuff = (wx, wy, wz) => this.game.fx.smoke(wx, wy, wz, 1, 0x8a8a8a, 0.16);
+    this.spots.push({ x, z, mesh: grp, life: this.rng.range(20, 28), age: 0, occupant: null, occupiedT: 0, pad, queue });
   }
   spawnItem() {
     const rng = this.rng, R = this.ring;
@@ -211,7 +212,15 @@ export class RumbleMode extends Mode {
       s.mesh.scale.setScalar(sc);
       let occ = null, bd = 1e9;
       for (const tr of this.trucks) { if (tr.ko) continue; const d = Math.hypot(tr.x - s.x, tr.z - s.z); if (d < 3.4 && tr.speed < 5 && d < bd) { bd = d; occ = tr; } }
-      if (occ !== s.occupant) { s.occupant = occ; s.occupiedT = 0; s.pad.material.color.set(occ ? occ.def.body : 0x3aa9ff); }
+      if (occ !== s.occupant) {
+        // the truck that was serving got smashed off the spot: the customers run for their lives
+        const prev = s.occupant;
+        if (prev && s.occupiedT > 0.8 && prev.lastHitBy && prev.lastHitBy !== prev && this.elapsed - prev.lastHitTime < 1.5) {
+          s.queue.panic(); g.audio.hit?.(0.5);
+          if (prev.isPlayer) g.hud.toast('CUSTOMERS SCATTERED!', 'bad'); else if (prev.lastHitBy.isPlayer) g.hud.toast('LUNCH RUSH RUINED!', 'gold');
+        }
+        s.occupant = occ; s.occupiedT = 0; s.pad.material.color.set(occ ? occ.def.body : 0x3aa9ff);
+      }
       if (occ) s.occupiedT += dt;
       // points come from each customer served: the queue calls back when food is handed over
       s.queue.update(dt, t, !!occ && s.occupiedT > 0.8, () => {

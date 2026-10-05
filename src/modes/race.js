@@ -11,6 +11,11 @@ export class RaceMode extends Mode {
     finalizeTrack(track, g.world);
     buildTrackVisuals(g.scene, track, g.world, g.props, this.rng);
     this.track = track;
+    // usable road on each side of the racing line (walls, ramp sides, the narrower overpass deck), for lane picking
+    this.room = track.samples.map((q) => {
+      const cap = q.y > 0.3 ? 4.6 : 6.5;
+      return [Math.min(cap, g.world.rayDistance(q.x, q.z, q.tz, -q.tx, 8)), Math.min(cap, g.world.rayDistance(q.x, q.z, -q.tz, q.tx, 8))]; // [-lat side, +lat side]
+    });
     // grid
     const order = this.rng.shuffle(this.trucks);
     order.forEach((tr, i) => {
@@ -30,18 +35,19 @@ export class RaceMode extends Mode {
       b.targetRank = rank;
       const ahead = rank < place;
       const k = ahead ? (place - rank) : (rank - place);
-      b.finalGap = (ahead ? 1 : -1) * (14 + k * 16 + this.rng.range(0, 8));
-      b.noiseSeed = this.rng.range(0, 1000); b.noiseAmp = this.rng.range(35, 70);
+      b.finalGap = (ahead ? 1 : -1) * (10 + k * 12 + this.rng.range(0, 6));
+      b.noiseSeed = this.rng.range(0, 1000); b.noiseAmp = this.rng.range(18, 32);
       b.laneOff = this.rng.range(-2.5, 2.5); b.laneSeed = this.rng.range(0, 100);
       b.boostMul = 1;
       this.drivers.set(b.id, new BotDriver(b, this.rng));
     });
     this.player.targetRank = place;
     this.startTime = 0; this.playerFinished = false; this.lastWrongWay = 0;
-    // the order sorts itself out over a late window; occasionally very late for a last-gasp comeback
-    this.corrStart = this.rng.chance(0.15) ? this.rng.range(0.9, 0.93) : this.rng.range(0.78, 0.9);
-    this.corrLen = this.rng.range(0.05, 0.08);
-    this.limiterUsed = 0; this.paceMul = 1; this._v = new THREE.Vector3();
+    // the order sorts itself out gradually over a long window (settled by roughly 75-90% of the race), so nobody
+    // needs more than a modest pace advantage; now and then it opens late for a last-gasp comeback
+    this.corrStart = this.rng.chance(0.12) ? this.rng.range(0.7, 0.76) : this.rng.range(0.52, 0.68);
+    this.corrEnd = Math.min(0.93, this.corrStart + this.rng.range(0.17, 0.22));
+    this.limiterUsed = 0; this.pPace = 20; this._v = new THREE.Vector3();
     this.mapBounds = this.computeBounds();
   }
   computeBounds() {
@@ -53,191 +59,221 @@ export class RaceMode extends Mode {
   update(dt, t) {
     super.update(dt, t);
     const g = this.game, track = this.track, p = this.player;
-    for (const tr of this.trucks) if (tr.finishedAt === null && !tr.kinematicStep) trackProgress(track, tr);
+    for (const tr of this.trucks) if (tr.finishedAt === null) trackProgress(track, tr);
     const frac = clamp(p.trackS / track.finishS, 0, 1);
-    const pRemain = Math.max(0, track.finishS - p.trackS), pTime = pRemain / Math.max(p.speed, 9);
-    let limiterNeeded = false;
+    const pRemain = Math.max(0, track.finishS - p.trackS);
+    // the player's pace, smoothed: instant speed jumps around in crashes and corners
+    this.pPace = damp(this.pPace, clamp(p.speed, 8, p.maxSpeed), 0.8, dt);
+    const win = smoothstep(this.corrStart, this.corrEnd, frac);
 
     for (const b of this.bots) {
       if (b.finishedAt !== null) { this.cruiseAfterFinish(b, dt, t); continue; }
-      if (b._baseMax === undefined) b._baseMax = b.maxSpeed;
-      const drv = this.drivers.get(b.id), ahead = b.finalGap > 0;
-      // feasibility: an ahead bot that would need an absurd speed to get past in time starts its correction now
-      const needSpeed = ahead ? (track.finishS + 6 - b.trackS) / Math.max(pTime, 0.4) : 0;
-      // start correcting early if the gap to close is getting too big for the distance left
-      const wrongBy = ahead ? (p.trackS + 6) - b.trackS : b.trackS - (p.trackS - 6);
-      if (!b.correcting && frac > 0.35 && wrongBy > pRemain * 0.22) b.correcting = true;
-      if (frac >= this.corrStart) b.correcting = true;
-      const startAt = b.correctFrom ?? (b.correcting ? (b.correctFrom = Math.min(frac, this.corrStart)) : null);
-      const blend = startAt === null ? 0 : smoothstep(startAt, Math.min(0.985, startAt + this.corrLen), frac);
-      // open racing: wander around the player (both sides), drifting back to the player when far off
-      const wander = noise1(t * 0.07 + b.noiseSeed) * b.noiseAmp * 0.55 + (ahead ? 6 : -6);
+      if (b._baseMax === undefined) { b._baseMax = b.maxSpeed; b._baseTurn = b.turnRate; b._baseAccel = b.accel; }
+      const drv = this.drivers.get(b.id), ahead = b.finalGap > 0, gap = b.trackS - p.trackS;
+      // a truck far out of place (crash, spin-out) starts sorting itself out early instead of needing a late burst
+      const wrongBy = ahead ? -gap : gap;
+      if (frac > 0.2 && !this.playerFinished && wrongBy + Math.abs(b.finalGap) > Math.max(30, pRemain * 0.14)) b.early = Math.min(1, (b.early || 0) + dt * 0.25);
+      const blend = Math.max(win, b.early || 0);
+      b.correcting = blend > 0.02;
+      if (b.correcting && b.correctFrom === undefined) b.correctFrom = frac;
+      // open racing: wander around the player (ahead-slated trucks mostly ahead, the rest mostly behind)
+      const wander = noise1(t * 0.06 + b.noiseSeed) * b.noiseAmp + (ahead ? 8 : -8);
       const desired = wander * (1 - blend) + b.finalGap * blend;
-      let err = (p.trackS + desired) - b.trackS;
-      if (this.playerFinished) err = ahead ? 60 : -5;
-      let speedFactor = clamp(1 + err / 40, 0.1, 1.35);
-      // hidden pace: lagging bots get a rubber band; correcting ahead bots get exactly the speed they need
-      let boost = clamp(1 + Math.max(0, err - 25) / 120, 1, 1.3);
-      let draft = false;
-      if (ahead && b.correcting && !this.playerFinished) {
-        boost = Math.max(boost, clamp((needSpeed * 1.12) / b._baseMax, 1, 2.1));
-        if (b.trackS < p.trackS + 8) speedFactor = Math.max(speedFactor, 1.3);
-        // slipstream: tucked in close behind the player, a climber gets an immediate tow past
-        if (b.trackS < p.trackS + 6 && b.trackS > p.trackS - 40) { boost = Math.max(boost, (Math.max(p.speed, 10) * 1.45) / b._baseMax); draft = true; }
-      }
-      // corners: always brake (handling scales with the hidden boost, so the cap is relative)
-      const cap = this.turnCap(b);
-      speedFactor = Math.min(speedFactor, cap);
-      // behind bots that are still ahead of the player during the correction ease off or slip up
-      if (!ahead && b.correcting && !this.playerFinished && b.trackS > p.trackS - 6) {
-        speedFactor = Math.min(speedFactor, 0.55 + 0.3 * (1 - blend));
-        // while ahead of the player late on, slower than the player by enough to be caught before the line
-        const surplus = b.trackS - p.trackS + 10, slowK = clamp(1 - surplus / Math.max(30, pRemain * 0.6), 0.3, 0.85);
-        boost = Math.min(boost, Math.max(0.25, (Math.max(p.speed, 8) * slowK) / b._baseMax));
-        if (!b.mistakeAt) b.mistakeAt = t + this.rng.range(0.5, 3);
+      let err = desired - gap; // > 0: needs to gain on the player
+      if (this.playerFinished) err = ahead ? 80 : -20;
+      // pace: the player's pace plus a proportional term; a hidden power boost of at most 30% when short of the target
+      let boost = 1 + clamp((err - 8) / 90, 0, 0.3);
+      // slipstream: tucked in behind the player a climber gets a small tow
+      if (ahead && b.correcting && gap < -4 && gap > -30) boost = Math.min(1.36, boost + 0.06);
+      // floors: a truck slated ahead may run away (never crawls waiting for the player); one slated behind slows to be caught
+      const toLine = track.finishS - b.trackS;
+      let speedFactor = clamp((this.pPace / (b._baseMax * boost)) * (1 + err / 35), ahead ? 0.5 : gap > 0 && toLine < 160 ? 0.12 : 0.3, 1.3);
+      // corners: always brake (handling scales with the boost, so the cap is relative)
+      speedFactor = Math.min(speedFactor, this.turnCap(b));
+      // behind-slated trucks that are still ahead of the player late on slip up now and then
+      if (!ahead && b.correcting && blend > 0.3 && !this.playerFinished && gap > -4) {
+        if (!b.mistakeAt) b.mistakeAt = t + this.rng.range(1, 4);
         if (t > b.mistakeAt && b.speed > 12 && track.finishS - b.trackS > 100) {
-          b.mistakeAt = t + this.rng.range(4, 8);
-          if (this.rng.chance(0.55)) { b.applyEffect('spin', 1.1); g.fx.smoke(b.x, 1, b.z, 8, 0x999999); }
-          else { b.laneOff = (b.laneOff >= 0 ? 1 : -1) * 4.6; b.wideUntil = t + 1.6; }  // runs wide into the kerb
+          b.mistakeAt = t + this.rng.range(5, 9);
+          if (this.rng.chance(0.5)) { b.applyEffect('spin', 1.1); g.fx.smoke(b.x, 1, b.z, 8, 0x999999); }
+          else { b.wideLane = b.trackLat >= 0 ? (b.laneHi ?? 3) + 0.4 : (b.laneLo ?? -3) - 0.4; b.wideUntil = t + 1.6; } // runs wide into the kerb
         }
       }
-      // failsafe: a behind bot never crosses the line before the player
+      if (b.wideUntil && t > b.wideUntil) { b.wideUntil = 0; b.wideLane = null; }
+      // a behind-slated truck that reaches the last stretch ahead of the player pulls over to the side and waits
+      if (!ahead && !this.playerFinished && gap > 0 && toLine < 50) { b.wideLane = (p.trackLat ?? 0) > 0 ? (b.laneLo ?? -3) : (b.laneHi ?? 3); b.wideUntil = t + 0.5; }
+      // a behind-slated truck never crosses the line before the player
       if (!ahead && !this.playerFinished && b.trackS > track.finishS - 10 - (b.speed * b.speed) / 30) { speedFactor = 0; boost = Math.min(boost, 0.2); }
-      b.boostMul = draft ? Math.max(b.boostMul || 1, boost) : damp(b.boostMul || 1, boost, 2.5, dt);
-      if (b.wideUntil && t > b.wideUntil) { b.laneOff = this.rng.range(-2.2, 2.2); b.wideUntil = 0; }
-      // limiter only when this climber cannot make it at the pace the rail can give it
-      const canDo = b.kinematicStep ? (b.railV ?? 0) * 1.25 : b._baseMax * 1.3;
-      const bTime = (track.finishS + 5 - b.trackS) / Math.max(b.speed, 5); // arrival at its current pace
-      if (ahead && b.correcting && !this.playerFinished && b.trackS < p.trackS + 8 && pRemain < 220 && (needSpeed > canDo || (pRemain < 140 && bTime > pTime - 0.35))) limiterNeeded = true;
-      // a climber shrugs off spin-outs and freezes from other trucks' specials while it makes its move
+      b.boostMul = damp(b.boostMul || 1, boost, 1.5, dt);
+      // climbers shrug off spin-outs and freezes from other trucks' specials while they make their move
       b.shielded = ahead && b.correcting && !this.playerFinished;
-      b.dbg = { err: Math.round(err), sf: +speedFactor.toFixed(2), boost: +b.boostMul.toFixed(2), corr: !!b.correcting };
       this.rails(b, dt);
-      // target point on the spline with a lane offset
-      // lane discipline while the order sorts itself out: climbers pass on one side, fallers keep to the other
-      // climbers overtake on the side away from the player; fallers keep to the player's side
+      // lanes: pick the clearest way past whatever is ahead; if every lane is blocked, follow instead of ramming
       const passSide = (p.trackLat ?? 0) > 0 ? -1 : 1;
-      const laneBase = b.correcting && !this.playerFinished && !b.wideUntil ? passSide * (ahead ? 2.6 : -2.2) : b.laneOff;
-      b.laneCur = damp(b.laneCur ?? b.laneOff, laneBase, 1.2, dt);
-      const lane = clamp(b.laneCur + noise1(t * 0.2 + b.laneSeed) * (b.correcting ? 0.4 : 1.5), -4.6, 4.6);
-      const look = 6 + b.speed * 0.35;
-      const [tx, tz] = this.followTarget(b, look, b.wideUntil ? b.laneOff : clamp(lane, -2.2, 2.2));
+      const preferred = b.correcting && !this.playerFinished ? passSide * (ahead ? 2.4 : -2.4) : b.laneOff;
+      const plan = this.planLane(b, preferred, dt);
+      speedFactor = Math.min(speedFactor, plan.cap);
+      const lane = b.wideLane ?? b.laneCur;
+      const look = clamp(5 + b.speed * 0.3, 6, 16);
+      const [tx, tz] = this.followTarget(b, look, clamp(lane + noise1(t * 0.2 + b.laneSeed) * 0.25, b.laneLo, b.laneHi));
       if (Math.abs(b.trackLat) > 6) speedFactor = Math.min(speedFactor, 0.7);
       this.unstick(b, drv, t);
-      // climbers only steer around trucks that are not giving way to them
-      const avoid = ahead && b.correcting ? this.trucks.filter((o) => o.isPlayer || o.finalGap > 0) : this.trucks;
-      drv.drive(tx, tz, speedFactor, dt, t, { world: g.world, avoidTrucks: avoid, turbo: b.boostMul > 1.15 || err > 25 });
-      // hidden brake: a behind bot is held short of the line until the player is across
-      if (!ahead && !this.playerFinished && b.trackS > track.finishS - 14) { const k = Math.exp(-6 * dt); b.vx *= k; b.vz *= k; }
-      if (g.specials.botWants(b, this.trucks, dt, 0.8)) b.control.special = true;
-      if (b.correcting && !this.playerFinished) this.railCommand(b, ahead, err, pRemain, needSpeed, lane);
-      else b.kinematicStep = null;
-      if (b._baseTurn === undefined) { b._baseTurn = b.turnRate; b._baseAccel = b.accel; }
+      b.dbg = { err: Math.round(err), sf: +speedFactor.toFixed(2), boost: +b.boostMul.toFixed(2), corr: b.correcting, lane: +b.laneCur.toFixed(1), clear: Math.round(plan.clear) };
+      this.driveLane(b, drv, tx, tz, speedFactor, dt, plan.clear > 25 && speedFactor > 1.05);
+      // hidden brake: a behind-slated truck is held short of the line until the player is across
+      if (!ahead && !this.playerFinished && b.trackS > track.finishS - 14) { const k = Math.exp((b.trackS > track.finishS - 5 ? -25 : -6) * dt); b.vx *= k; b.vz *= k; }
+      if (plan.clear > 12 && g.specials.botWants(b, this.trucks, dt, 0.8)) b.control.special = true;
+      b.kinematicStep = null;
       b.maxSpeed = b._baseMax * b.boostMul; b.turnRate = b._baseTurn * b.boostMul; b.accel = b._baseAccel * b.boostMul;
-      this.safetyNet(b, ahead, pRemain);
+      this.safetyNet(b, ahead, frac, speedFactor);
     }
-    // last resort: if an ahead bot still has not got past near the end, the player's top speed sags a little
-    if (p._baseMax === undefined) p._baseMax = p.maxSpeed;
-    const want = limiterNeeded ? 1 - 0.45 * clamp(1 - pRemain / 220, 0, 1) - (pRemain < 60 ? 0.1 : 0) : 1;
-    if (limiterNeeded) this.limiterUsed += dt;
-    this.paceMul = damp(this.paceMul, want, 3.5, dt);
-    p.maxSpeed = p._baseMax * this.paceMul;
+    if (p._baseMax !== undefined) p.maxSpeed = p._baseMax; // the player's truck is never slowed down
 
-    // finishes
+    // finishes (physical crossing order is recorded; the ranking itself is always the rolled one)
     for (const tr of this.trucks) {
       if (tr.finishedAt === null && tr.trackS >= track.finishS) {
         tr.finishedAt = this.elapsed; this.finishOrder.push(tr); tr.finishPlace = this.finishOrder.length;
         const fp = trackPointAt(track, track.finishS);
         if (tr.isPlayer) {
-          this.playerFinished = true;
+          this.playerFinished = true; this.finishWait = 0;
           g.fx.confetti(fp.x, 8, fp.z, 160, 12);
-          const place = tr.finishPlace;
-          if (place !== g.outcome.place) console.warn('race pacing missed: crossed', place, 'rolled', g.outcome.place);
+          const place = g.outcome.place;
+          if (tr.finishPlace !== place) console.warn('race pacing missed: crossed', tr.finishPlace, 'rolled', place);
           g.hud.announce(ordinal(place) + ' PLACE!');
           if (place <= 3) g.audio.fanfare(); else g.audio.sad();
-          this.awaitRanking = true;
         } else if (g.near(tr)) g.fx.confetti(fp.x, 7, fp.z, 40, 8);
       }
     }
-    if (this.awaitRanking && !this.finished) {
-      // finishers in true crossing order, then the rest by their track position
-      const ranking = this.standings();
-      ranking.forEach((r, i) => { if (r.finishedAt === null) r.finishPlace = i + 1; });
-      this.awaitRanking = false;
-      this.finish(this.player.finishPlace, ranking.map((r) => ({ truck: r, place: r.finishPlace, score: r.finishedAt !== null ? fmtTime(r.finishedAt) : '' })), 3.5);
+    if (this.playerFinished && !this.finished) {
+      // give trucks slated ahead a moment to cross, then post the rolled result
+      this.finishWait += dt;
+      const pending = this.bots.some((b) => b.finalGap > 0 && b.finishedAt === null);
+      if (!pending || this.finishWait > 4) this.finish(g.outcome.place, this.rankedResult(), Math.max(0.6, 3.5 - this.finishWait));
     }
     // wrong-way / off track hints
     if (!this.playerFinished && p.trackDist > 22 && t - this.lastWrongWay > 4) { this.lastWrongWay = t; g.hud.toast('BACK TO THE TRACK!', 'bad'); }
   }
   /**
-   * Racing-line drive for bots in the correction window: the bot follows the spline at a commanded speed, limited by
-   * the corner ahead and by a realistic acceleration, changing lanes smoothly. Climbers get exactly the pace they need,
-   * fallers ease off behind the player.
+   * The result board: always the rolled order. Finish times are shown where the crossing order agrees with it
+   * (the player's own time always), so the board never contradicts itself.
    */
-  railCommand(b, ahead, err, pRemain, needSpeed, lane) {
-    const p = this.player, track = this.track;
-    if (!b.kinematicStep) {
-      // join the rail where the bot is: same distance, same (clamped) lateral offset, same speed
-      b.railS = b.trackS; b.railLat = clamp(b.trackLat ?? 0, -4.6, 4.6); b.railV = Math.max(4, b.fwdSpeed);
-      b.kinematicStep = (dt, world) => this.railStep(b, dt, world);
-    }
-    const ps = Math.max(p.speed, 8);
-    let v;
-    if (ahead) {
-      v = b.railS < p.trackS + 6 ? Math.max(needSpeed * 1.15, ps * 1.18) : ps * clamp(1 + err / 60, 1.0, 1.25);
-      v = Math.max(v, needSpeed * 1.08);
-    } else if (b.railS > p.trackS - 6) {
-      const surplus = b.railS - p.trackS + 10;
-      v = ps * clamp(1 - surplus / Math.max(30, pRemain * 0.6), 0.3, 0.85);
-    } else v = ps * clamp(1 + err / 60, 0.6, 0.98);
-    if (!ahead && track.finishS - b.railS < 14) v = 0;
-    b.railTarget = Math.min(v, 78); b.railLane = lane;
-  }
-  railStep(b, dt, world) {
-    const track = this.track;
-    // corner limit from the heading change over the next stretch
-    const a1 = trackPointAt(track, b.railS + 4), a2 = trackPointAt(track, b.railS + 24 + b.railV * 0.6);
-    const turn = Math.acos(clamp(a1.tx * a2.tx + a1.tz * a2.tz, -1, 1)), radius = (20 + b.railV * 0.6) / Math.max(turn, 1e-3);
-    const vCorner = Math.sqrt(26 * radius);
-    const target = Math.min(b.railTarget ?? b.railV, vCorner);
-    const acc = target > b.railV ? 16 + b.accel * 0.4 : 30;
-    b.railV = target > b.railV ? Math.min(target, b.railV + acc * dt) : Math.max(target, b.railV - acc * dt);
-    const prevLat = b.railLat;
-    b.railLat += clamp((b.railLane ?? 0) - b.railLat, -3.2 * dt, 3.2 * dt);
-    b.railS += b.railV * dt;
-    const q = trackPointAt(track, b.railS), nx = -q.tz, nz = q.tx;
-    const x = q.x + nx * b.railLat, z = q.z + nz * b.railLat;
-    const dLat = (b.railLat - prevLat) / Math.max(1e-4, b.railV * dt);
-    const heading = Math.atan2(q.tx, q.tz) + Math.atan(dLat) * -1;
-    b.vx = (x - b.x) / dt; b.vz = (z - b.z) / dt;
-    if (Math.hypot(b.vx, b.vz) > b.railV * 1.6 + 5) { b.vx = q.tx * b.railV; b.vz = q.tz * b.railV; } // first step after joining
-    b.angVel = wrapAngle(heading - b.heading) / dt;
-    b.x = x; b.z = z; b.heading = heading;
-    const el = world.elevation(x, z); b.groundH = el.h; b.onOverpass = !!el.op && el.h > 0.05; b.y = el.h;
-    b.trackS = b.railS; b.trackLat = b.railLat; b.trackIdx = q.idx;
+  rankedResult() {
+    const list = this.trucks.slice().sort((a, b) => a.targetRank - b.targetRank);
+    const pt = this.player.finishedAt;
+    let last = -Infinity;
+    return list.map((tr) => {
+      let score = '';
+      if (tr.isPlayer) { score = fmtTime(pt); last = pt; }
+      else if (tr.finishedAt !== null && tr.finishedAt >= last && (tr.targetRank > this.player.targetRank || tr.finishedAt <= pt)) { score = fmtTime(tr.finishedAt); last = tr.finishedAt; }
+      tr.finishPlace = tr.targetRank;
+      return { truck: tr, place: tr.targetRank, score };
+    });
   }
   /**
-   * Last-resort catch-up for an ahead bot that is hopelessly far back (crashed, stuck): when neither the bot nor the
-   * spot it moves to can be seen by the camera, it is placed on the track a little behind the player.
+   * Race driving for bots: pure-pursuit steering onto a point of the chosen lane and a speed controller. No wall
+   * feelers and no swerving around trucks (the lane planner already picked a clear line). Wedged against something,
+   * it backs off and tries again.
    */
-  safetyNet(b, ahead, pRemain) {
+  driveLane(b, drv, tx, tz, speedFactor, dt, turbo) {
+    const c = b.control;
+    if (b.stuckTime > 1.0 && drv.reverseTimer <= 0) { drv.reverseTimer = 0.9; drv.reverseDir = angleDiff(b.heading, Math.atan2(tx - b.x, tz - b.z)) > 0 ? -1 : 1; b.stuckTime = 0; drv.stuckCount++; }
+    if (drv.reverseTimer > 0) { drv.reverseTimer -= dt; c.throttle = -1; c.steer = drv.reverseDir; c.handbrake = false; c.turbo = false; return; }
+    const diff = angleDiff(b.heading, Math.atan2(tx - b.x, tz - b.z));
+    c.steer = clamp(diff * 2.4, -1, 1);
+    const want = b.maxSpeed * clamp(speedFactor, 0, 1.4) * (Math.abs(diff) > 0.8 ? 0.55 : Math.abs(diff) > 0.45 ? 0.8 : 1);
+    c.throttle = clamp((want - b.fwdSpeed) / 4, -1, 1);
+    c.handbrake = false;
+    c.turbo = !!turbo && Math.abs(diff) < 0.2 && b.turboCd <= 0;
+  }
+  /**
+   * Overtaking: score candidate lanes by how far ahead they are clear of slower trucks (in track coordinates), with a
+   * small preference for staying put and for the director's preferred side. Lane changes are eased; a truck that is
+   * still lined up behind a slower one follows at a safe gap instead of ramming it.
+   */
+  /** lateral range a truck's centre can use over the next stretch of road */
+  laneRange(b) {
+    const i0 = b.trackIdx ?? 0, R = this.room;
+    let lo = -4.2, hi = 4.2;
+    for (let i = Math.max(0, i0 - 2); i < Math.min(R.length, i0 + 16); i++) { lo = Math.max(lo, -(R[i][0] - 1.8)); hi = Math.min(hi, R[i][1] - 1.8); }
+    if (lo > hi) lo = hi = (lo + hi) / 2;
+    return [lo, hi];
+  }
+  planLane(b, preferred, dt) {
+    const [lo, hi] = this.laneRange(b);
+    b.laneLo = lo; b.laneHi = hi;
+    const LANES = [-3.6, -1.8, 0, 1.8, 3.6].map((l) => clamp(l, lo, hi)).filter((l, i, a) => a.indexOf(l) === i), W = 2.8;
+    if (b.laneCur === undefined) { b.laneCur = clamp(b.trackLat ?? b.laneOff, -3.6, 3.6); b.laneTarget = b.laneCur; }
+    const cur = b.trackLat ?? b.laneCur;
+    const clearOf = (l) => {
+      let clear = 50;
+      for (const o of this.trucks) {
+        if (o === b || !o.alive || o.trackLat === undefined) continue;
+        const ds = o.trackS - b.trackS;
+        if (ds < -1.5 || ds > 50) continue;
+        if (ds > 10 && o.fwdSpeed > b.fwdSpeed + 2) continue; // pulling away: not in the way
+        if (Math.abs(o.trackLat - l) < W && ds < clear) clear = Math.max(0, ds);
+      }
+      // getting there: something alongside between here and that lane makes the move impossible right now
+      if (Math.abs(l - cur) > 1 && !(b.forceT > 0)) for (const o of this.trucks) {
+        if (o === b || !o.alive || o.trackLat === undefined) continue;
+        const ds = o.trackS - b.trackS, side = o.trackLat - cur;
+        if (Math.abs(ds) < 6.5 && side * (l - cur) > 0 && Math.abs(side) > 0.8 && Math.abs(side) < Math.abs(l - cur) + W) clear = Math.min(clear, 1);
+      }
+      return clear;
+    };
+    // held up too long behind something slow: force the move (squeeze past whatever is alongside)
+    if (b.heldT > 1.5) { b.forceT = 2.0; b.heldT = 0; }
+    if (b.forceT > 0) b.forceT -= dt;
+    let best = b.laneTarget, bestScore = -Infinity, bestClear = 0;
+    const scores = new Map();
+    for (const l of LANES) {
+      const c = clearOf(l), score = c - Math.abs(l - cur) * 1.5 - Math.abs(l - preferred) * 0.5 - (Math.abs(l) > 3 ? 1 : 0);
+      scores.set(l, [score, c]);
+      if (score > bestScore) { bestScore = score; best = l; bestClear = c; }
+    }
+    // hysteresis: keep the current plan unless another lane is clearly better
+    const keep = scores.get(b.laneTarget);
+    if (keep && keep[0] > bestScore - 5) { best = b.laneTarget; bestClear = keep[1]; }
+    b.laneTarget = clamp(best, lo, hi);
+    const rate = bestClear < 15 ? 3.4 : 2.2;
+    b.laneCur += clamp(b.laneTarget - b.laneCur, -rate * dt, rate * dt);
+    b.laneCur = clamp(b.laneCur, lo - 0.3, hi + 0.3);
+    // follow: whatever is directly ahead in the truck's actual line sets a speed cap with a safe gap
+    // follow: whatever is directly ahead in the truck's actual line sets a speed cap with a safe gap (match its
+    // speed when close, never a dead stop behind a moving truck); a squeeze-past creeps instead of waiting
+    let cap = 1.4;
+    for (const o of this.trucks) {
+      if (o === b || !o.alive || o.trackLat === undefined) continue;
+      const ds = o.trackS - b.trackS;
+      if (ds < 0.5 || ds > 28 || Math.abs(o.trackLat - b.trackLat) > W) continue;
+      const vo = Math.max(0, o.fwdSpeed), vSafe = ds < 8 ? vo * 0.9 - (8 - ds) * 0.8 : vo + (ds - 8) * 0.8;
+      cap = Math.min(cap, Math.max(0, vSafe) / Math.max(1, b.maxSpeed));
+    }
+    if (b.forceT > 0) cap = Math.max(cap, 0.22);
+    b.heldT = cap < 0.25 && !b.disabled() ? (b.heldT || 0) + dt : 0;
+    return { cap, clear: bestClear };
+  }
+  /**
+   * Last resort for a truck that is wedged (stuck) or hopelessly far back early on (crashed): when neither the truck
+   * nor the spot it moves to can be seen by the camera, it is put back on the track. Never during the late race.
+   */
+  safetyNet(b, ahead, frac, sf) {
     const p = this.player, g = this.game;
-    if (!ahead || this.playerFinished || !b.correcting) return;
+    if (this.playerFinished) return;
     const deficit = p.trackS - b.trackS;
-    b.slowT = b.speed < 8 && !b.disabled() ? (b.slowT || 0) + 1 / 60 : 0;
-    const stuck = b.slowT > 1.0, far = deficit >= Math.max(70, pRemain * 0.35);
-    if ((!far && !stuck) || (b._lastNet && this.elapsed - b._lastNet < (stuck ? 2 : 6))) return;
+    b.slowT = b.speed < 6 && sf > 0.4 && !b.disabled() ? (b.slowT || 0) + 1 / 60 : 0; // wants to go, cannot
+    const stuck = b.slowT > 2.0, far = ahead && frac < this.corrEnd && deficit >= 140;
+    if ((!far && !stuck) || (b._lastNet && this.elapsed - b._lastNet < 6)) return;
     const cam = g.camera; cam.updateMatrixWorld();
     const fr = this._fr || (this._fr = new THREE.Frustum()), m = this._pm || (this._pm = new THREE.Matrix4());
     m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); fr.setFromProjectionMatrix(m);
-    const seen = (x, y, z) => fr.containsPoint(this._v.set(x, y + 1.5, z)) && Math.hypot(x - cam.position.x, z - cam.position.z) < 260;
+    const seen = (x, y, z) => Math.hypot(x - cam.position.x, z - cam.position.z) < 300 && (fr.containsPoint(this._v.set(x, y + 1.5, z)) || Math.hypot(x - cam.position.x, z - cam.position.z) < 40);
     if (seen(b.x, b.y, b.z)) return;
-    // stuck: back onto the centre line where it is; hopelessly far: up to just behind the player
-    const s = far ? p.trackS - 34 : b.trackS + 2, q = trackPointAt(this.track, s);
+    const s = far ? p.trackS - 80 : b.trackS + 2, q = trackPointAt(this.track, s);
     if (seen(q.x, q.y, q.z) || s < 0) return;
     const lat = this.rng.range(-2.5, 2.5);
     b.x = q.x - q.tz * lat; b.z = q.z + q.tx * lat; b.y = q.y; b.heading = Math.atan2(q.tx, q.tz);
-    const v0 = far ? p.speed : 15; b.vx = q.tx * v0; b.vz = q.tz * v0; b.angVel = 0; b.slowT = 0; b.trackIdx = q.idx; b.trackS = s; b._lastNet = this.elapsed; this.netUsed = (this.netUsed || 0) + 1;
+    const v0 = far ? this.pPace : 12; b.vx = q.tx * v0; b.vz = q.tz * v0; b.angVel = 0; b.slowT = 0; b.trackIdx = q.idx; b.trackS = s; b.trackLat = lat; b.laneCur = lat; b.laneTarget = 0; b._lastNet = this.elapsed; this.netUsed = (this.netUsed || 0) + 1;
   }
   /** target point ahead on the spline; never a point behind the truck (avoids circling) */
   followTarget(tr, look, lane) {
@@ -293,6 +329,7 @@ export class RaceMode extends Mode {
     if (this.track.length - b.trackS < 6) drv.stop(dt); else drv.drive(tp.x, tp.z, 0.4, dt, t, { world: this.game.world, avoidTrucks: this.trucks });
   }
   standings() {
+    if (this.playerFinished) return this.trucks.slice().sort((a, b) => a.targetRank - b.targetRank);
     return this.trucks.slice().sort((a, b) => {
       if (a.finishedAt !== null && b.finishedAt !== null) return a.finishPlace - b.finishPlace;
       if (a.finishedAt !== null) return -1; if (b.finishedAt !== null) return 1;
@@ -300,7 +337,7 @@ export class RaceMode extends Mode {
     });
   }
   hud() {
-    const rows = this.standings().map((tr, i) => ({ name: tr.name, color: this.colorOf(tr), you: tr.isPlayer, score: tr.finishedAt !== null ? fmtTime(tr.finishedAt) : '', pos: tr.finishedAt !== null ? tr.finishPlace : i + 1 }));
+    const rows = this.standings().map((tr, i) => ({ name: tr.name, color: this.colorOf(tr), you: tr.isPlayer, score: tr.finishedAt !== null ? fmtTime(tr.finishedAt) : '', pos: this.playerFinished ? tr.targetRank : tr.finishedAt !== null ? tr.finishPlace : i + 1 }));
     return { rows, timer: fmtTime(this.elapsed), sub: `${Math.round(clamp(this.player.trackS / this.track.finishS, 0, 1) * 100)}% · ${ordinal(rows.findIndex((r) => r.you) + 1)}` };
   }
   drawMinimap(ctx, size) {
