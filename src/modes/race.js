@@ -128,6 +128,13 @@ export class RaceMode extends Mode {
       this.safetyNet(b, ahead, frac, speedFactor);
     }
     if (p._baseMax !== undefined) p.maxSpeed = p._baseMax; // the player's truck is never slowed down
+    // hard stop: a behind-slated truck cannot be shoved across the line before the player (it just won't budge)
+    if (!this.playerFinished) for (const b of this.bots) {
+      if (b.finalGap > 0 || b.finishedAt !== null || b.trackS <= track.finishS - 2) continue;
+      const q = trackPointAt(track, track.finishS - 2), over = b.trackS - (track.finishS - 2), fwd = b.vx * q.tx + b.vz * q.tz;
+      b.x -= q.tx * over; b.z -= q.tz * over; b.trackS = track.finishS - 2;
+      if (fwd > 0) { b.vx -= q.tx * fwd; b.vz -= q.tz * fwd; }
+    }
 
     // finishes (physical crossing order is recorded; the ranking itself is always the rolled one)
     for (const tr of this.trucks) {
