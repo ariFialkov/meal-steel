@@ -142,6 +142,8 @@ export class Game {
       if (!T[i].alive) continue;
       for (let j = i + 1; j < T.length; j++) {
         if (!T[j].alive || T[i].ghost || T[j].ghost) continue;
+        // a bot catching up unseen may slip through other bots (never through the player)
+        if ((T[i].ghostBots && !T[j].isPlayer) || (T[j].ghostBots && !T[i].isPlayer)) continue;
         const r = collideTrucks(T[i], T[j]);
         if (r && r.strength > 0) this.onTruckHit(T[i], T[j], r);
       }

@@ -69,6 +69,12 @@ export class RaceMode extends Mode {
     // and the player's speed right now (lightly smoothed): late in the race bots match it, so a pass sticks
     this.pNow = damp(this.pNow ?? p.speed, p.speed, 4, dt);
     const win = smoothstep(this.corrStart, this.corrEnd, frac);
+    // what the camera can see this frame (bots catching up out of view may use more pace)
+    const cam = g.camera; cam.updateMatrixWorld();
+    const fr = this._fr || (this._fr = new THREE.Frustum()), pm = this._pm || (this._pm = new THREE.Matrix4());
+    pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); fr.setFromProjectionMatrix(pm);
+    const inView = (tr) => this._sph.set(this._v.set(tr.x, tr.y + 1.6, tr.z), 4) && fr.intersectsSphere(this._sph);
+    this._sph = this._sph || new THREE.Sphere();
 
     for (const b of this.bots) {
       if (b.finishedAt !== null) { this.cruiseAfterFinish(b, dt, t); continue; }
@@ -94,6 +100,11 @@ export class RaceMode extends Mode {
       if (ahead && b.correcting && gap < -4 && gap > -30) boost = Math.min(1.6, boost + 0.06 + (blend > 0.5 ? 0.08 : 0));
       // slingshot: late on, a climber tucked in close behind the player pulls out of the tow and gets past
       if (ahead && blend > 0.55 && gap < -2 && gap > -22 && !this.playerFinished) boost = Math.max(boost, 1.72);
+      // out of sight behind the player, a climber may close in faster and slip through other bots; in view it is
+      // solid again (once clear of whatever it overlapped) and back to believable pace
+      const unseen = ahead && b.correcting && gap < -3 && !this.playerFinished && !inView(b);
+      if (unseen) { boost = Math.max(boost, 2.1); b.ghostBots = true; }
+      else if (b.ghostBots && !this.trucks.some((o) => o !== b && !o.isPlayer && Math.hypot(o.x - b.x, o.z - b.z) < 6.2)) b.ghostBots = false;
       // floors: a truck slated ahead may run away (never crawls waiting for the player); one slated behind slows to be caught
       const toLine = track.finishS - b.trackS;
       let speedFactor = clamp((this.pPace / (b._baseMax * boost)) * (1 + err / 35), ahead ? 0.35 : gap > 0 && toLine < 160 ? 0.12 : 0.3, 1.3);
@@ -227,13 +238,14 @@ export class RaceMode extends Mode {
   }
   planLane(b, preferred, dt) {
     const [lo, hi] = this.laneRange(b);
+    const others = b.ghostBots ? [this.player] : this.trucks;
     b.laneLo = lo; b.laneHi = hi;
     const LANES = [-3.6, -1.8, 0, 1.8, 3.6].map((l) => clamp(l, lo, hi)).filter((l, i, a) => a.indexOf(l) === i), W = 2.8;
     if (b.laneCur === undefined) { b.laneCur = clamp(b.trackLat ?? b.laneOff ?? 0, -3.6, 3.6); b.laneTarget = b.laneCur; }
     const cur = b.trackLat ?? b.laneCur;
     const clearOf = (l) => {
       let clear = 50;
-      for (const o of this.trucks) {
+      for (const o of others) {
         if (o === b || !o.alive || o.trackLat === undefined) continue;
         const ds = o.trackS - b.trackS;
         if (ds < -1.5 || ds > 50) continue;
@@ -241,7 +253,7 @@ export class RaceMode extends Mode {
         if (Math.abs(o.trackLat - l) < W && ds < clear) clear = Math.max(0, ds);
       }
       // getting there: something alongside between here and that lane makes the move impossible right now
-      if (Math.abs(l - cur) > 1 && !(b.forceT > 0)) for (const o of this.trucks) {
+      if (Math.abs(l - cur) > 1 && !(b.forceT > 0)) for (const o of others) {
         if (o === b || !o.alive || o.trackLat === undefined) continue;
         const ds = o.trackS - b.trackS, side = o.trackLat - cur;
         if (Math.abs(ds) < 6.5 && side * (l - cur) > 0 && Math.abs(side) > 0.8 && Math.abs(side) < Math.abs(l - cur) + W) clear = Math.min(clear, 1);
@@ -269,7 +281,7 @@ export class RaceMode extends Mode {
     // follow: whatever is directly ahead in the truck's actual line sets a speed cap with a safe gap (match its
     // speed when close, never a dead stop behind a moving truck); a squeeze-past creeps instead of waiting
     let cap = 1.4;
-    for (const o of this.trucks) {
+    for (const o of others) {
       if (o === b || !o.alive || o.trackLat === undefined) continue;
       const ds = o.trackS - b.trackS;
       if (ds < 0.5 || ds > 16 || Math.abs(o.trackLat - b.trackLat) > 2.5) continue; // actually overlapping
