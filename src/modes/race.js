@@ -140,7 +140,13 @@ export class RaceMode extends Mode {
       const passSide = (p.trackLat ?? 0) > 0 ? -1 : 1;
       // a truck that has to drop back moves over to the side away from the player instead of blocking the road
       // (to the player's side: the climbers pass on the other one, and the player has traffic to get round, as in a real race)
-      const preferred = err < -8 && !this.playerFinished ? -passSide * 3.4 : b.correcting && !this.playerFinished && ahead ? passSide * 2.4 : b.laneOff;
+      let preferred = err < -8 && !this.playerFinished ? -passSide * 3.4 : b.correcting && !this.playerFinished && ahead ? passSide * 2.4 : b.laneOff;
+      // closing on the player late: pass on whichever side has more road, right out at the edge of the usable lane
+      if (ahead && blend > 0.3 && gap < 3 && gap > -30 && !this.playerFinished && b.laneLo !== undefined) {
+        const pl = p.trackLat ?? 0, roomHi = b.laneHi - pl, roomLo = pl - b.laneLo;
+        preferred = roomHi >= roomLo ? b.laneHi : b.laneLo;
+      }
+      b.passing = ahead && blend > 0.3 && gap < 3 && gap > -30 && !this.playerFinished;
       const plan = this.planLane(b, preferred, dt);
       speedFactor = Math.min(speedFactor, plan.cap);
       const lane = b.wideLane ?? b.laneCur;
@@ -240,7 +246,7 @@ export class RaceMode extends Mode {
     const [lo, hi] = this.laneRange(b);
     const others = b.ghostBots ? [this.player] : this.trucks;
     b.laneLo = lo; b.laneHi = hi;
-    const LANES = [-3.6, -1.8, 0, 1.8, 3.6].map((l) => clamp(l, lo, hi)).filter((l, i, a) => a.indexOf(l) === i), W = 2.8;
+    const LANES = [lo, -3.6, -1.8, 0, 1.8, 3.6, hi].map((l) => clamp(l, lo, hi)).filter((l, i, a) => a.indexOf(l) === i), W = 2.7;
     if (b.laneCur === undefined) { b.laneCur = clamp(b.trackLat ?? b.laneOff ?? 0, -3.6, 3.6); b.laneTarget = b.laneCur; }
     const cur = b.trackLat ?? b.laneCur;
     const clearOf = (l) => {
@@ -266,7 +272,7 @@ export class RaceMode extends Mode {
     let best = b.laneTarget, bestScore = -Infinity, bestClear = 0;
     const scores = new Map();
     for (const l of LANES) {
-      const c = clearOf(l), score = c - Math.abs(l - cur) * 1.5 - Math.abs(l - preferred) * 0.5 - (Math.abs(l) > 3 ? 1 : 0);
+      const c = clearOf(l), score = c - Math.abs(l - cur) * 1.5 - Math.abs(l - preferred) * (b.passing ? 4 : 0.5) - (Math.abs(l) > 3 && !b.passing ? 1 : 0);
       scores.set(l, [score, c]);
       if (score > bestScore) { bestScore = score; best = l; bestClear = c; }
     }
