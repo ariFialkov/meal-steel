@@ -104,7 +104,7 @@ export class Game {
     for (const tr of this.trucks) tr.applyRender(alpha);
     this.mode.applyRender?.(alpha);
     this.updateCamera(dt);
-    this.specials.soft.update(0, this.camera); // turn the cloud billboards to this frame's camera
+    this.specials.soft.update(0, this.camera); this.specials.flame.update(0, this.camera); // turn the billboards to this frame's camera
     this.hud.update(this, dt);
     if (this.mode.finished) {
       this.mode.endTimer -= dt;

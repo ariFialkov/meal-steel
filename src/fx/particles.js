@@ -20,7 +20,7 @@ export class Particles {
   /**
    * opts.additive: glowing particles (fire, lasers, flashes) drawn with additive blending, unlit.
    * opts.soft: billboarded puffs with a soft round edge that thin out as they age (clouds of smoke, frost, sugar, dust);
-   * update() then wants the camera.
+   * update() then wants the camera. With opts.unlit they glow at their own colour (flames).
    */
   constructor(scene, opts = {}) {
     const MAX = this.max = opts.max || MAX_DEFAULT;
@@ -30,7 +30,9 @@ export class Particles {
     let material;
     if (opts.additive) material = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     else if (this.soft) {
-      material = new THREE.MeshLambertMaterial({ map: puffTexture(), transparent: true, depthWrite: false });
+      // opts.unlit: self-lit puffs (flame bodies) that keep their colour instead of adding up to white like additive glow
+      material = opts.unlit ? new THREE.MeshBasicMaterial({ map: puffTexture(), transparent: true, depthWrite: false, toneMapped: false })
+        : new THREE.MeshLambertMaterial({ map: puffTexture(), transparent: true, depthWrite: false });
       // per-particle opacity, so a cloud thins out instead of shrinking
       this.alpha = new THREE.InstancedBufferAttribute(new Float32Array(MAX), 1); this.alpha.setUsage(THREE.DynamicDrawUsage);
       geo.setAttribute('instanceAlpha', this.alpha);

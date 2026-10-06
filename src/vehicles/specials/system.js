@@ -14,6 +14,7 @@ export class SpecialSystem {
     this.game = game; this.scene = game.scene; this.fx = game.fx; this.audio = game.audio; this.world = game.world;
     this.glow = new Particles(game.scene, { additive: true, max: 900 });
     this.soft = new Particles(game.scene, { soft: true, max: 1200 }); // clouds: smoke, frost, sugar, dust
+    this.flame = new Particles(game.scene, { soft: true, unlit: true, max: 600 }); // flame bodies
     this.group = new THREE.Group(); game.scene.add(this.group);
     this.tasks = []; this.projectiles = []; this.hazards = []; this.burns = []; this.time = 0;
   }
@@ -225,5 +226,6 @@ export class SpecialSystem {
     }
     this.glow.update(dt);
     this.soft.update(dt, this.game.camera);
+    this.flame.update(dt, this.game.camera);
   }
 }

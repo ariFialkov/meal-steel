@@ -23,7 +23,8 @@ function softRing(sys, x, y, z, color, radius = 6, n = 28) {
 }
 function fireball(sys, x, y, z, scale = 1) {
   if (!sys.near(x, z)) return;
-  sys.glow.emit(Math.round(26 * scale), (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.2, s = (4 + Math.random() * 8) * scale; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s + 2; q.g = 2; q.drag = 3; q.size = 0.5 * scale; q.grow = 2.2 * scale; q.life = 0.45 + Math.random() * 0.25; q.color = pick(FIRE); });
+  sys.flame.emit(Math.round(14 * scale), (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.2, s = (3 + Math.random() * 6) * scale; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s + 2.5; q.g = -1; q.drag = 3; q.size = 0.6 * scale; q.grow = 2.6 * scale; q.life = 0.5 + Math.random() * 0.25; q.alpha = 0.95; q.color = pick([0xff5a14, 0xff7a1f, 0xffa020, 0xe8400f]); q.spin = 3; });
+  sys.glow.emit(Math.round(14 * scale), (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.2, s = (4 + Math.random() * 8) * scale; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s + 2; q.g = 2; q.drag = 3; q.size = 0.5 * scale; q.grow = 2.2 * scale; q.life = 0.45 + Math.random() * 0.25; q.color = pick(FIRE); });
   softSmoke(sys, x, y + 0.5, z, Math.round(12 * scale), 0x3a3633, 1.2 * scale, 3);
   sys.fx.debris(x, y, z, Math.round(10 * scale), 0x4a3b30);
   softRing(sys, x, Math.max(0.3, y - 1), z, 0x8a7a68, 5 * scale, Math.round(22 * Math.min(1.5, scale)));
@@ -689,7 +690,11 @@ export const MOVES = {
         const hitSet = new Set();
         sys.task(() => (dt, t, age) => {
           const mouth = sys.worldPoint(tr, [0, 2.74, 2.55], _a), dir = sys.worldDir(tr, [0, -0.1, 1], _b).normalize();
-          if (sys.near(mouth.x, mouth.z)) sys.glow.emit(8, (q) => { const sp = 22 + Math.random() * 10; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 7 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 5; q.vz = dir.z * sp + (Math.random() - 0.5) * 7 + tr.vz; q.g = -3; q.drag = 1.8; q.size = 0.3; q.grow = 3.2; q.life = 0.45 + Math.random() * 0.25; q.color = q.vy > 0 && Math.random() < 0.3 ? 0xffb02a : pick(FLAME); q.spin = 6; });
+          if (sys.near(mouth.x, mouth.z)) {
+            // the plume: orange flame bodies, a hot glowing core near the mouth
+            sys.flame.emit(6, (q) => { const sp = 22 + Math.random() * 10; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 7 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 5; q.vz = dir.z * sp + (Math.random() - 0.5) * 7 + tr.vz; q.g = -4; q.drag = 1.8; q.size = 0.35; q.grow = 3.4; q.life = 0.5 + Math.random() * 0.25; q.alpha = 0.95; q.color = pick([0xff5a14, 0xff7a1f, 0xe8400f, 0xff9a26, 0xd02a0a]); q.spin = 4; });
+            sys.glow.emit(3, (q) => { const sp = 18 + Math.random() * 8; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 4 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 3; q.vz = dir.z * sp + (Math.random() - 0.5) * 4 + tr.vz; q.g = -3; q.drag = 2.5; q.size = 0.25; q.grow = 1.4; q.life = 0.22; q.color = pick(FLAME); q.spin = 6; });
+          }
           if (sys.near(mouth.x, mouth.z) && Math.random() < 0.5) softSmoke(sys, mouth.x + dir.x * 14, mouth.y + 2, mouth.z + dir.z * 14, 1, 0x3a3633, 1.1, 3);
           for (const v of sys.enemies(tr)) {
             if (hitSet.has(v)) continue;
