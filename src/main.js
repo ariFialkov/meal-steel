@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RNG } from './core/rng.js';
 import { Input } from './core/input.js';
-import { AudioSys } from './core/audio.js';
+import { AudioSys, installAudioDebug } from './core/audio.js';
 import { rollGameParams, rollOutcome, pickLineup } from './data/modes.js';
 import { loadTruckModels } from './vehicles/models.js';
 import { Menu } from './ui/menu.js';
@@ -27,6 +27,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 const envMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 const input = new Input();
 const audio = new AudioSys();
+installAudioDebug(audio); // ` key (or ?audiodebug): latency diagnostics
 const BANK_KEY = 'ms.bank';
 let bank = parseInt(localStorage.getItem(BANK_KEY) || '1000', 10);
 if (!Number.isFinite(bank)) bank = 1000;
