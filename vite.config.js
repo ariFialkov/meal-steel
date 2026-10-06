@@ -3,7 +3,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
-  assetsInclude: ['**/*.glb'],
+  assetsInclude: ['**/*.fbx'],
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 1200,
@@ -11,6 +11,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
+      manifestFilename: 'manifest.json', // (not .webmanifest: some hosts reject that file type)
       includeAssets: ['icons/*.png', 'icons/*.svg'],
       manifest: {
         name: 'Meal Steel',
@@ -29,10 +30,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,woff2}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,json,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // truck models are content-hashed and fetched on demand, then served from cache (also offline)
-        runtimeCaching: [{ urlPattern: /\.glb$/, handler: 'CacheFirst', options: { cacheName: 'truck-models', expiration: { maxEntries: 40 } } }],
+        runtimeCaching: [{ urlPattern: /\.fbx$/, handler: 'CacheFirst', options: { cacheName: 'truck-models', expiration: { maxEntries: 40 } } }],
       },
     }),
   ],

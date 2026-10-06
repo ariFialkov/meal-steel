@@ -1,24 +1,25 @@
-// Import Meshy-style truck exports (FBX + PBR PNGs) into compact game-ready GLBs.
+// Import Meshy-style truck exports (FBX + PBR PNGs) into compact game-ready FBX files (textures embedded).
 //
 //   node scripts/import-trucks.mjs <sourceDir> [--only <truckId>]
 //
 // <sourceDir> holds one folder per truck, named after the truck ("burrito bandito", "chief beef", ...).
 // Each folder needs *_texture.fbx, *_texture.png, *_texture_normal.png, *_texture_roughness.png and
-// *_texture_metallic.png. Output goes to src/assets/trucks/<id>.glb, which the game picks up automatically.
+// *_texture_metallic.png. Output goes to src/assets/trucks/<id>.fbx, which the game picks up automatically.
 //
 // The model is rotated by the yaw in scripts/truck-models.json so its front faces +Z, scaled to the
-// game's truck footprint, centred, and dropped onto y = 0. Textures are resized and stored as WebP,
-// with roughness (G) and metallic (B) packed into one glTF metallicRoughness map.
-import { readFileSync, readdirSync, mkdirSync, statSync } from 'node:fs';
+// game's truck footprint, centred, and dropped onto y = 0. The mesh is welded and quantized (via a glTF document),
+// textures resized, roughness (G) and metallic (B) packed into one map, then written as FBX by fbx-writer.mjs.
+import { readFileSync, readdirSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import sharp from 'sharp';
-import { Document, NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS, EXTTextureWebP } from '@gltf-transform/extensions';
+import { Document } from '@gltf-transform/core';
+import { EXTTextureWebP } from '@gltf-transform/extensions';
 import { weld, quantize, prune, dedup } from '@gltf-transform/functions';
 import { TRUCKS } from '../src/data/trucks.js';
+import { docToFbx } from './fbx-writer.mjs';
 
 // FBXLoader decodes embedded textures with browser APIs. We only need its geometry, so stub them.
 globalThis.window = globalThis.window || { URL: { createObjectURL: () => '' } };
@@ -99,9 +100,8 @@ async function importTruck(dir, truck) {
   await doc.transform(weld(), dedup(), prune(), quantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 14 }));
 
   mkdirSync(OUT, { recursive: true });
-  const out = join(OUT, `${truck.id}.glb`);
-  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-  await io.write(out, doc);
+  const out = join(OUT, `${truck.id}.fbx`);
+  writeFileSync(out, await docToFbx(doc, truck.id));
   const b = geo.boundingBox;
   console.log(`${truck.id.padEnd(14)} ${(statSync(out).size / 1024).toFixed(0).padStart(5)} KB  tris ${pos.length / 9}  size ${(b.max.x - b.min.x).toFixed(2)} x ${(b.max.y).toFixed(2)} x ${(b.max.z - b.min.z).toFixed(2)} (w x h x l)`);
 }

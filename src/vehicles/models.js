@@ -1,15 +1,25 @@
-// Truck model library. Every src/assets/trucks/<id>.glb is picked up at build time, loaded on demand,
+// Truck model library. Every src/assets/trucks/<id>.fbx is picked up at build time, loaded on demand,
 // cached as a template, and cloned per truck (geometry, materials and textures are shared between clones). Each model
 // is rigged once on load: its wheels are split into their own meshes (see rig.js).
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+// The FBX files come from scripts/fbx-writer.mjs: one mesh with base colour, normal and metallic-roughness maps
+// embedded; FBXLoader hands them over on a Phong material, which is swapped for the PBR material they were made for.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { rigTruck } from './rig.js';
 import { TRUCK_PARTS } from './truckfx.js';
 
 const URLS = {};
-for (const [path, url] of Object.entries(import.meta.glob('../assets/trucks/*.glb', { query: '?url', import: 'default', eager: true }))) {
-  URLS[path.split('/').pop().replace(/\.glb$/, '')] = url;
+for (const [path, url] of Object.entries(import.meta.glob('../assets/trucks/*.fbx', { query: '?url', import: 'default', eager: true }))) {
+  URLS[path.split('/').pop().replace(/\.fbx$/, '')] = url;
 }
-const loader = new GLTFLoader();
+const loader = new FBXLoader();
+
+/** the truck's PBR material from FBXLoader's Phong one (the metallic-roughness map rides in the specular slot) */
+function pbrMaterial(phong) {
+  const mr = phong.specularMap;
+  if (mr) mr.colorSpace = THREE.NoColorSpace; // data, not colour (FBXLoader tags the specular slot sRGB)
+  return new THREE.MeshStandardMaterial({ name: phong.name, map: phong.map, normalMap: phong.normalMap, roughnessMap: mr, metalnessMap: mr, roughness: 1, metalness: mr ? 1 : 0 });
+}
 const templates = new Map(), pending = new Map(), listeners = new Set();
 
 export const hasTruckModel = (id) => id in URLS;
@@ -20,10 +30,10 @@ export function loadTruckModel(id) {
   if (!URLS[id]) return Promise.resolve(null);
   if (templates.has(id)) return Promise.resolve(templates.get(id).scene);
   if (!pending.has(id)) {
-    pending.set(id, loader.loadAsync(URLS[id]).then((gltf) => {
-      const scene = gltf.scene;
+    pending.set(id, loader.loadAsync(URLS[id]).then((scene) => {
       scene.traverse((o) => {
         if (!o.isMesh) return;
+        const old = o.material; o.material = pbrMaterial(old); old.dispose();
         o.castShadow = true; o.receiveShadow = true;
         o.userData.shared = true; // owned by the library: Game.dispose must not free it
         const m = o.material;
