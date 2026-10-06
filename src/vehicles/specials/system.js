@@ -130,7 +130,8 @@ export class SpecialSystem {
   hit(att, vic, o = {}) {
     if (!vic || !vic.alive || vic.ko) return;
     const g = this.game, mode = g.mode;
-    if (o.push) vic.impulse(o.push[0] * vic.mass, o.push[1] * vic.mass, (o.push[2] || 0) * vic.mass);
+    // a shielded truck (a mode keeping its result on track) is only nudged
+    if (o.push) { const k = vic.shielded ? 0.25 : 1; vic.impulse(o.push[0] * vic.mass * k, o.push[1] * vic.mass * k, (o.push[2] || 0) * vic.mass * k); }
     for (const k of ['spin', 'freeze', 'slick', 'drunk', 'gum', 'snare', 'slow', 'stun']) if (o[k]) vic.applyEffect(k, o[k]);
     if (o.freeze) { vic.vx *= 0.1; vic.vz *= 0.1; }
     if (o.snare) { vic.vx *= 0.25; vic.vz *= 0.25; }

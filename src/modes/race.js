@@ -133,8 +133,9 @@ export class RaceMode extends Mode {
       // a behind-slated truck never crosses the line before the player
       if (!ahead && !this.playerFinished && b.trackS > track.finishS - 10 - (b.speed * b.speed) / 30) { speedFactor = 0; boost = Math.min(boost, 0.2); }
       b.boostMul = damp(b.boostMul || 1, boost, 1.5, dt);
-      // climbers shrug off spin-outs and freezes from other trucks' specials while they make their move
-      b.shielded = ahead && b.correcting && !this.playerFinished;
+      // trucks due to finish ahead of the player shrug off spin-outs, freezes, nets and knock-downs from specials while
+      // they make their move and all through the closing stretch (a heavy special can't steal their place at the line)
+      b.shielded = ahead && (b.correcting || frac > 0.55) && !this.playerFinished;
       this.rails(b, dt);
       // lanes: pick the clearest way past whatever is ahead; if every lane is blocked, follow instead of ramming
       const passSide = (p.trackLat ?? 0) > 0 ? -1 : 1;
