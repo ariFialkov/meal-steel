@@ -1,13 +1,9 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { readdirSync } from 'node:fs';
 
-// truck models: public/models/<truck id>.fbx, copied into the build as they are (plain names, no content hash)
-const TRUCK_MODELS = readdirSync(new URL('./public/models', import.meta.url)).filter((f) => f.endsWith('.fbx')).map((f) => f.slice(0, -4)).sort();
 
 export default defineConfig({
   base: './',
-  define: { __TRUCK_MODELS__: JSON.stringify(TRUCK_MODELS) },
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 1200,
@@ -40,8 +36,8 @@ export default defineConfig({
         inlineWorkboxRuntime: true, // one sw.js, no separately hashed workbox-<hash>.js
         globPatterns: ['**/*.{js,css,html,png,svg,json,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        // truck models are fetched on demand, then served from cache (also offline)
-        runtimeCaching: [{ urlPattern: /\.fbx$/, handler: 'CacheFirst', options: { cacheName: 'truck-models', expiration: { maxEntries: 40 } } }],
+        // truck textures (models/*.jpg) are fetched on demand, then served from cache (also offline)
+        runtimeCaching: [{ urlPattern: /models\/[^/]+\.jpg$/, handler: 'CacheFirst', options: { cacheName: 'truck-models', expiration: { maxEntries: 40 } } }],
       },
     }),
   ],

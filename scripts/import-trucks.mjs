@@ -1,15 +1,15 @@
-// Import Meshy-style truck exports (FBX + PBR PNGs) into compact game-ready FBX files (textures embedded).
+// Import Meshy-style truck exports (FBX + PBR PNGs) into the game's compact web-native model format.
 //
 //   node scripts/import-trucks.mjs <sourceDir> [--only <truckId>]
 //
 // <sourceDir> holds one folder per truck, named after the truck ("burrito bandito", "chief beef", ...).
 // Each folder needs *_texture.fbx, *_texture.png, *_texture_normal.png, *_texture_roughness.png and
-// *_texture_metallic.png. Output goes to public/models/<id>.fbx, which the game picks up automatically.
+// *_texture_metallic.png. Output goes to src/models/<id>.js and public/models/<id>_*.jpg (see model-writer.mjs), which the game picks up automatically.
 //
 // The model is rotated by the yaw in scripts/truck-models.json so its front faces +Z, scaled to the
 // game's truck footprint, centred, and dropped onto y = 0. The mesh is welded and quantized (via a glTF document),
-// textures resized, roughness (G) and metallic (B) packed into one map, then written as FBX by fbx-writer.mjs.
-import { readFileSync, readdirSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+// textures resized, roughness (G) and metallic (B) packed into one map, then written out by model-writer.mjs.
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
@@ -19,14 +19,13 @@ import { Document } from '@gltf-transform/core';
 import { EXTTextureWebP } from '@gltf-transform/extensions';
 import { weld, quantize, prune, dedup } from '@gltf-transform/functions';
 import { TRUCKS } from '../src/data/trucks.js';
-import { docToFbx } from './fbx-writer.mjs';
+import { writeTruckModel } from './model-writer.mjs';
 
 // FBXLoader decodes embedded textures with browser APIs. We only need its geometry, so stub them.
 globalThis.window = globalThis.window || { URL: { createObjectURL: () => '' } };
 THREE.TextureLoader.prototype.load = function () { return new THREE.Texture(); };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'public/models');
 const config = JSON.parse(readFileSync(join(ROOT, 'scripts/truck-models.json'), 'utf8'));
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -99,9 +98,7 @@ async function importTruck(dir, truck) {
   doc.createScene().addChild(doc.createNode(truck.id).setMesh(mesh));
   await doc.transform(weld(), dedup(), prune(), quantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 14 }));
 
-  mkdirSync(OUT, { recursive: true });
-  const out = join(OUT, `${truck.id}.fbx`);
-  writeFileSync(out, await docToFbx(doc, truck.id));
+  const { js: out } = await writeTruckModel(doc, truck.id, ROOT);
   const b = geo.boundingBox;
   console.log(`${truck.id.padEnd(14)} ${(statSync(out).size / 1024).toFixed(0).padStart(5)} KB  tris ${pos.length / 9}  size ${(b.max.x - b.min.x).toFixed(2)} x ${(b.max.y).toFixed(2)} x ${(b.max.z - b.min.z).toFixed(2)} (w x h x l)`);
 }
