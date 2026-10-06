@@ -4,7 +4,7 @@
 //
 // <sourceDir> holds one folder per truck, named after the truck ("burrito bandito", "chief beef", ...).
 // Each folder needs *_texture.fbx, *_texture.png, *_texture_normal.png, *_texture_roughness.png and
-// *_texture_metallic.png. Output goes to src/assets/trucks/<id>.fbx, which the game picks up automatically.
+// *_texture_metallic.png. Output goes to public/models/<id>.fbx, which the game picks up automatically.
 //
 // The model is rotated by the yaw in scripts/truck-models.json so its front faces +Z, scaled to the
 // game's truck footprint, centred, and dropped onto y = 0. The mesh is welded and quantized (via a glTF document),
@@ -26,7 +26,7 @@ globalThis.window = globalThis.window || { URL: { createObjectURL: () => '' } };
 THREE.TextureLoader.prototype.load = function () { return new THREE.Texture(); };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'src/assets/trucks');
+const OUT = join(ROOT, 'public/models');
 const config = JSON.parse(readFileSync(join(ROOT, 'scripts/truck-models.json'), 'utf8'));
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 

@@ -1,4 +1,4 @@
-// Truck model library. Every src/assets/trucks/<id>.fbx is picked up at build time, loaded on demand,
+// Truck model library. Every public/models/<id>.fbx is picked up at build time (vite.config.js), loaded on demand,
 // cached as a template, and cloned per truck (geometry, materials and textures are shared between clones). Each model
 // is rigged once on load: its wheels are split into their own meshes (see rig.js).
 // The FBX files come from scripts/fbx-writer.mjs: one mesh with base colour, normal and metallic-roughness maps
@@ -8,10 +8,9 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { rigTruck } from './rig.js';
 import { TRUCK_PARTS } from './truckfx.js';
 
+// models/<id>.fbx next to index.html (copied from public/ as is)
 const URLS = {};
-for (const [path, url] of Object.entries(import.meta.glob('../assets/trucks/*.fbx', { query: '?url', import: 'default', eager: true }))) {
-  URLS[path.split('/').pop().replace(/\.fbx$/, '')] = url;
-}
+for (const id of __TRUCK_MODELS__) URLS[id] = `${import.meta.env.BASE_URL}models/${id}.fbx`;
 const loader = new FBXLoader();
 
 /** the truck's PBR material from FBXLoader's Phong one (the metallic-roughness map rides in the specular slot) */

@@ -1,4 +1,4 @@
-// The bank of trucks (14). Trucks with a model in src/assets/trucks render it; the rest use the procedural mesh.
+// The bank of trucks (14). Trucks with a model in public/models render it; the rest use the procedural mesh.
 // The bank of trucks. stats are 1..5. light / heavy are the truck's two special moves (vehicles/specials/moves.js).
 export const TRUCKS = [
   { id: 'bratzilla', name: 'Bratzilla', food: 'brats & hot dogs', body: 0xc8452c, accent: 0xf3d27a, trim: 0x2b1d1a, topper: 'sausage',

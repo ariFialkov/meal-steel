@@ -49,7 +49,7 @@ Every hit goes through the mode's `onSpecialHit`, so the rolled result always st
 
 ### Truck models
 
-All 14 trucks have textured models in `src/assets/trucks/<truck id>.fbx` (binary FBX with the textures embedded), picked up automatically; a truck without one (or whose model fails to load) falls back to a blocky built-in mesh. To add or replace models from Meshy-style exports (one folder per truck, named after the truck, holding the `*_texture.fbx` and its PNG maps):
+All 14 trucks have textured models in `public/models/<truck id>.fbx` (binary FBX with the textures embedded), picked up automatically; a truck without one (or whose model fails to load) falls back to a blocky built-in mesh. To add or replace models from Meshy-style exports (one folder per truck, named after the truck, holding the `*_texture.fbx` and its PNG maps):
 
 ```bash
 node scripts/import-trucks.mjs <folder-of-truck-folders> [--only <truck id>]
@@ -57,7 +57,7 @@ node scripts/import-trucks.mjs <folder-of-truck-folders> [--only <truck id>]
 
 When a model loads, `src/vehicles/rig.js` finds its wheels geometrically (contact patches on the ground, then a circle fit in the side view) and splits them into their own meshes, so wheels spin at road speed and the front pair steers, while the body rides on suspension springs (squat, dive, body roll, landings, kerbs and hits). Named moving parts are split out the same way by bounding box. `src/vehicles/truckfx.js` gives each truck its character: Ramenator's steaming bowl and swinging lanterns, General Tsonami's lanterns and fire-breathing dragon on boost, Fryclone's fries jiggling in their bucket, Wraptor's snapping jaw, Chief Beef's snorting skull, Cream Supreme's blaring megaphone, steam from exhaust stacks on braking and pulling away, and the regulars on Barmaggeddon's bar stools (chatting, drinking, and freaking out when the truck is hit).
 
-The script turns each export into a compact FBX (about 700 KB): front rotated to face forward, scaled to the game's truck footprint, mesh welded, textures resized and embedded as JPEG, roughness and metallic packed into one map (it rides in the FBX's specular slot; `src/vehicles/models.js` turns it back into a PBR material). The game ships no `.glb` or `.webmanifest` files, for hosts that reject them: the models are FBX (`scripts/glb-to-fbx.mjs` converts any GLB) and the PWA manifest is `manifest.json`. Per-truck rotation or size overrides go in `scripts/truck-models.json`. Models are fetched on demand and cached by the service worker.
+The script turns each export into a compact FBX (about 700 KB): front rotated to face forward, scaled to the game's truck footprint, mesh welded, textures resized and embedded as JPEG, roughness and metallic packed into one map (it rides in the FBX's specular slot; `src/vehicles/models.js` turns it back into a PBR material). The game ships no `.glb` or `.webmanifest` files, for hosts that reject them: the models are FBX (`scripts/glb-to-fbx.mjs` converts any GLB) and the PWA manifest is `manifest.json`. Built files keep plain names (no content hashes), and the models are copied to `models/` unchanged. Per-truck rotation or size overrides go in `scripts/truck-models.json`. Models are fetched on demand and cached by the service worker.
 
 ## City and props
 
