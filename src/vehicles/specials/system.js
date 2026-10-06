@@ -202,10 +202,10 @@ export class SpecialSystem {
           const lx = (Math.random() - 0.5) * 2.0, lz = (Math.random() - 0.5) * 4.4, top = Math.random() < 0.65;
           q.x = v.x + lx * c + lz * sn; q.z = v.z - lx * sn + lz * c; q.y = v.y + (top ? 2.7 + Math.random() * 0.4 : 1.0 + Math.random() * 1.4);
           q.vx = v.vx * 0.85 + (Math.random() - 0.5) * 1.2; q.vz = v.vz * 0.85 + (Math.random() - 0.5) * 1.2; q.vy = 2.5 + Math.random() * 2.5;
-          q.g = -6; q.drag = 0.6; q.size = top ? 0.55 + Math.random() * 0.35 : 0.4 + Math.random() * 0.2; q.grow = -0.25; q.stretch = 1.6 + Math.random() * 0.8; q.life = 0.4 + Math.random() * 0.3; q.alpha = 0.95;
+          q.g = -5; q.drag = 0.6; q.size = top ? 0.75 + Math.random() * 0.4 : 0.5 + Math.random() * 0.25; q.grow = -0.4; q.stretch = 1.0 + Math.random() * 0.5; q.life = 0.45 + Math.random() * 0.3; q.alpha = 0.95;
         });
         if (Math.random() < 0.5) this.glow.emit(1, (q) => { q.x = v.x + (Math.random() - 0.5) * 2; q.y = v.y + 2.8; q.z = v.z + (Math.random() - 0.5) * 3.5; q.vx = v.vx * 0.8 + (Math.random() - 0.5) * 2; q.vz = v.vz * 0.8 + (Math.random() - 0.5) * 2; q.vy = 4 + Math.random() * 3; q.g = 1; q.size = 0.06; q.life = 0.8; q.color = 0xffb02a; });
-        if (Math.random() < 0.25) this.smoke.emit(1, (q) => { q.x = v.x + (Math.random() - 0.5); q.y = v.y + 4; q.z = v.z + (Math.random() - 0.5); q.vx = v.vx * 0.5; q.vz = v.vz * 0.5; q.vy = 2.5; q.g = 0; q.drag = 0.8; q.size = 1.0; q.grow = 1.4; q.life = 1.6; q.alpha = 0.55; q.color = 0x3a3633; });
+        if (Math.random() < 0.18) this.smoke.emit(1, (q) => { q.x = v.x + (Math.random() - 0.5); q.y = v.y + 4.2; q.z = v.z + (Math.random() - 0.5); q.vx = v.vx * 0.5; q.vz = v.vz * 0.5; q.vy = 2.5; q.g = 0; q.drag = 0.8; q.size = 0.8; q.grow = 1.1; q.life = 1.4; q.alpha = 0.35; q.color = 0x4a4541; });
       }
     }
     // projectiles

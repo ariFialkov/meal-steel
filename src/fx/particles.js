@@ -32,10 +32,10 @@ const TEXTURES = {
   }),
 };
 // flames cool from a white-yellow core through orange to deep red and soot
-const RAMP = [[0, 1, 0.96, 0.75], [0.25, 1, 0.72, 0.22], [0.55, 1, 0.42, 0.08], [0.8, 0.78, 0.17, 0.04], [1, 0.3, 0.07, 0.03]];
+const RAMP = [[0, 1, 0.9, 0.45], [0.2, 1, 0.66, 0.12], [0.5, 0.98, 0.38, 0.04], [0.78, 0.78, 0.16, 0.03], [1, 0.32, 0.06, 0.03]]; // (sRGB)
 function ramp(t, out) {
-  for (let i = 1; i < RAMP.length; i++) if (t <= RAMP[i][0]) { const a = RAMP[i - 1], b = RAMP[i], k = (t - a[0]) / (b[0] - a[0]); return out.setRGB(a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k); }
-  return out.setRGB(0.3, 0.07, 0.03);
+  for (let i = 1; i < RAMP.length; i++) if (t <= RAMP[i][0]) { const a = RAMP[i - 1], b = RAMP[i], k = (t - a[0]) / (b[0] - a[0]); return out.setRGB(a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k, THREE.SRGBColorSpace); }
+  return out.setRGB(0.32, 0.06, 0.03, THREE.SRGBColorSpace);
 }
 const _up = new THREE.Vector3(), _toCam = new THREE.Vector3(), _rt = new THREE.Vector3(), _nm = new THREE.Vector3(), _c2 = new THREE.Color();
 
