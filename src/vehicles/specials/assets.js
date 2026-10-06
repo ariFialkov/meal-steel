@@ -165,7 +165,7 @@ export function noodleNet(dome = false) {
 
 /** Tortilla with a charred, speckled face; slightly dished. */
 export function tortilla() {
-  const geo = cached('tortilla', () => { const g = new THREE.CircleGeometry(0.6, 24, 0, Math.PI * 2); const P = g.attributes.position.array; for (let i = 0; i < P.length; i += 3) P[i + 2] = (P[i] * P[i] + P[i + 1] * P[i + 1]) * 0.25; g.computeVertexNormals(); return g; });
+  const geo = cached('tortilla', () => { const g = new THREE.CircleGeometry(0.6, 24, 0, Math.PI * 2); const P = g.attributes.position.array; for (let i = 0; i < P.length; i += 3) P[i + 2] = (P[i] * P[i] + P[i + 1] * P[i + 1]) * 0.25; g.rotateX(-Math.PI / 2); g.computeVertexNormals(); return g; }); // lying flat, dished up a little
   const m = mat('tortillaTex');
   if (!m.map) {
     const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
@@ -176,19 +176,38 @@ export function tortilla() {
   return mesh(geo, m);
 }
 
-/** Classic folded take-out box: tapered, white with a red pagoda print and a wire handle. */
+/** Classic folded take-out box: tapered white carton printed with a red 福 and a double red rule on every side, folded
+ *  lid flaps and a wire handle. */
 export function takeoutBox() {
-  const geo = cached('takeout', () => {
+  const g = new THREE.Group();
+  const m = mat('takeoutTex');
+  if (!m.map) {
+    // four side panels side by side (the carton's UVs wrap once around)
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
+    x.fillStyle = '#fbfaf4'; x.fillRect(0, 0, 512, 128);
+    for (let k = 0; k < 4; k++) {
+      const cx = k * 128 + 64;
+      x.fillStyle = '#d42020'; x.fillRect(k * 128 + 10, 14, 108, 5); x.fillRect(k * 128 + 10, 23, 108, 2); // red rules under the lid
+      x.fillRect(k * 128 + 10, 112, 108, 3);
+      x.strokeStyle = '#d42020'; x.lineWidth = 4; x.beginPath(); x.arc(cx, 68, 34, 0, Math.PI * 2); x.stroke(); // seal round the character
+      x.font = 'bold 50px "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", SimHei, sans-serif';
+      x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#d42020'; x.fillText('福', cx, 70);
+      x.fillStyle = 'rgba(0,0,0,0.06)'; x.fillRect(k * 128, 0, 2, 128); // crease at each corner
+    }
+    m.map = new THREE.CanvasTexture(c); m.map.colorSpace = THREE.SRGBColorSpace; m.map.anisotropy = 4; m.roughness = 0.75; m.color.set(0xffffff); m.needsUpdate = true;
+  }
+  const body = mesh(cached('takeoutBody', () => new THREE.CylinderGeometry(0.34, 0.24, 0.42, 4, 1, true).rotateY(Math.PI / 4).translate(0, 0.21, 0)), m);
+  const base = mesh(cached('takeoutBase', () => new THREE.PlaneGeometry(0.34, 0.34).rotateX(Math.PI / 2).translate(0, 0.001, 0)), 'std:f1f1ea');
+  // the lid: four flaps folded in to a ridge
+  const lid = mesh(cached('takeoutLid', () => {
     const b = new GeoBuilder();
-    const body = new THREE.CylinderGeometry(0.34, 0.24, 0.42, 4, 1).rotateY(Math.PI / 4);
-    b.geo(body, xform(0, 0.21, 0), '#fbfbf6');
-    b.geo(new THREE.CylinderGeometry(0.3, 0.34, 0.06, 4, 1).rotateY(Math.PI / 4), xform(0, 0.45, 0), '#f1f1ea');
-    b.geo(prim('box'), xform(0, 0.24, 0.205, 0, 0.12, 0, 0.26, 0.16, 0.01), '#d62828'); // printed pagoda panel
-    b.geo(prim('box'), xform(0, 0.33, 0.21, 0, 0.12, 0, 0.3, 0.04, 0.01), '#d62828');
-    b.geo(new THREE.TorusGeometry(0.2, 0.01, 5, 14, Math.PI), xform(0, 0.48, 0), '#8a8f98');
+    b.geo(new THREE.CylinderGeometry(0.04, 0.34, 0.12, 4, 1).rotateY(Math.PI / 4), xform(0, 0.48, 0), '#f6f5ee');
+    b.geo(prim('box'), xform(0, 0.545, 0, 0, 0, 0, 0.36, 0.03, 0.05), '#efeee6');
     return b.build();
-  });
-  return mesh(geo, 'vc');
+  }), 'vc');
+  const handle = mesh(cached('takeoutHandle', () => new THREE.TorusGeometry(0.22, 0.012, 5, 16, Math.PI).translate(0, 0.42, 0)), 'steel');
+  g.add(body, base, lid, handle);
+  return g;
 }
 
 /** Bottle (beer / wine) or a pint glass with foam. */

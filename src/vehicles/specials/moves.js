@@ -22,6 +22,7 @@ function softRing(sys, x, y, z, color, radius = 6, n = 28) {
   sys.soft.emit(n, (q, k) => { const a = (k / n) * 6.28 + Math.random() * 0.2; q.x = x + Math.cos(a) * 1.2; q.y = y + 0.2; q.z = z + Math.sin(a) * 1.2; q.vx = Math.cos(a) * radius * 2; q.vz = Math.sin(a) * radius * 2; q.vy = 0.8; q.g = 0; q.drag = 2.6; q.size = 0.7; q.grow = 1.6; q.life = 0.75 + Math.random() * 0.25; q.color = color; q.alpha = 0.7; q.spin = 1; });
 }
 function fireball(sys, x, y, z, scale = 1) {
+  sys.snd(scale >= 0.8 ? 'boom' : 'pop', x, z, Math.min(1, 0.5 + scale * 0.4));
   if (!sys.near(x, z)) return;
   sys.flame.emit(Math.round(14 * scale), (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.2, s = (3 + Math.random() * 6) * scale; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s + 2.5; q.g = -1; q.drag = 3; q.size = 0.6 * scale; q.grow = 2.6 * scale; q.life = 0.5 + Math.random() * 0.25; q.alpha = 0.95; q.color = pick([0xff5a14, 0xff7a1f, 0xffa020, 0xe8400f]); q.spin = 3; });
   sys.glow.emit(Math.round(14 * scale), (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.2, s = (4 + Math.random() * 8) * scale; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s + 2; q.g = 2; q.drag = 3; q.size = 0.5 * scale; q.grow = 2.2 * scale; q.life = 0.45 + Math.random() * 0.25; q.color = pick(FIRE); });
@@ -33,7 +34,20 @@ function splashAt(sys, x, y, z, color, n = 16, up = 6, size = 0.28) {
   if (!sys.near(x, z)) return;
   sys.fx.emit(n, (q) => { const a = Math.random() * 6.28, s = 2 + Math.random() * 6; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * s; q.vz = Math.sin(a) * s; q.vy = up * (0.5 + Math.random()); q.size = size * (0.6 + Math.random() * 0.8); q.life = 0.6 + Math.random() * 0.4; q.color = color; q.spin = 3; });
 }
+/** a gob of cheese whiz that sticks where a round hit the truck, each one bigger than the last, then slides off */
+function cheeseSplotch(sys, v, p, n = 1) {
+  const body = v.mesh.userData.body; if (!body || !sys.near(v.x, v.z)) return;
+  const blobs = v._whizBlobs || (v._whizBlobs = []);
+  if (blobs.length >= 8) blobs.shift().removeFromParent();
+  body.updateWorldMatrix(true, false);
+  const c = body.localToWorld(_c.set(0, 1.7, 0)), hit = _a.set(p.x, p.y, p.z), out = _b.copy(hit).sub(c).normalize();
+  const g = A.whizGlob(), k = 1.4 + Math.min(2.2, n * 0.25);
+  g.position.copy(body.worldToLocal(hit.clone().addScaledVector(out, -0.15))); body.add(g); blobs.push(g);
+  g.lookAt(hit.clone().addScaledVector(out, 3)); g.scale.set(k, k * 0.8, 0.35);
+  sys.after(3.5, () => { const i = blobs.indexOf(g); if (i >= 0) blobs.splice(i, 1); g.removeFromParent(); });
+}
 function sparkle(sys, x, y, z) {
+  sys.snd('crackers', x, z, 0.8);
   if (!sys.near(x, z)) return;
   const cols = [0xff3b3b, 0xffd23f, 0x3aff8a, 0x3aa9ff, 0xff5fa2, 0xffffff];
   sys.glow.emit(34, (q) => { const a = Math.random() * 6.28, e = Math.random() * 1.4 - 0.2, s = 6 + Math.random() * 10; q.x = x; q.y = y; q.z = z; q.vx = Math.cos(a) * Math.cos(e) * s; q.vz = Math.sin(a) * Math.cos(e) * s; q.vy = Math.sin(e) * s; q.g = 9; q.drag = 2; q.size = 0.12; q.life = 0.5 + Math.random() * 0.4; q.color = pick(cols); });
@@ -63,6 +77,7 @@ function crew(sys, tr, opening, liquid = null, count = 2) {
   for (let k = 0; k < count; k++) { const c = A.cook(rng); c.scale.setScalar(0.82); c.position.set(count === 1 ? 0 : (k ? 0.5 : -0.5), -0.15, -0.35); g.add(c); cooks.push(c); }
   let vat = null; if (liquid !== null) { vat = A.vat(liquid); vat.position.set(0, 0.75, 0.05); g.add(vat); }
   tr.mesh.userData.body.add(g);
+  sys.snd('hatch', tr.x, tr.z, 0.8);
   return { g, cooks, vat, out: o };
 }
 const armsUp = (c, up) => { c.userData.calm.visible = !up; c.userData.up.visible = up; };
@@ -73,13 +88,14 @@ const armsUp = (c, up) => { c.userData.calm.visible = !up; c.userData.up.visible
  */
 function vatDump(sys, tr, opening, liquid, onPour, done) {
   const c = crew(sys, tr, opening, liquid);
-  let fired = false;
+  let fired = false, poured = false;
   sys.task(() => (dt, t, age) => {
     const k = age;
     c.g.scale.y = smooth(k / 0.25) * (1 - smooth((k - 1.55) / 0.25)) + 0.01;
     const tip = smooth((k - 0.3) / 0.3) * (1 - smooth((k - 1.25) / 0.3));
     c.vat.rotation.x = tip * 1.9; c.vat.position.set(0, 0.75 + tip * 0.45, 0.05 + tip * 0.35);
     for (const ck of c.cooks) armsUp(ck, tip > 0.2);
+    if (!poured && tip > 0.3) { poured = true; sys.snd('pour', tr.x, tr.z); }
     if (tip > 0.6) {
       const lip = sys.worldPoint(tr, [c.out.p[0] + Math.sin(c.out.yaw) * 0.9, c.out.p[1] + 1.4, c.out.p[2] + Math.cos(c.out.yaw) * 0.9], _a);
       const out = sys.worldDir(tr, [Math.sin(c.out.yaw), -0.2, Math.cos(c.out.yaw)], _b).normalize();
@@ -124,9 +140,10 @@ export const MOVES = {
         const rest = s.position.clone();
         sys.task(() => (dt, t, age) => {
           // wind up: the sausage draws back in the bun and quivers
-          if (age < 0.45) { s.position.set(rest.x + Math.sin(age * 80) * 0.03, rest.y + 0.05, rest.z - smooth(age / 0.45) * 0.5); return true; }
-          s.position.copy(rest);
+          if (age < 0.45) { if (!s.userData.cocked) { s.userData.cocked = true; sys.snd('retract', tr.x, tr.z, 0.8); } s.position.set(rest.x + Math.sin(age * 80) * 0.03, rest.y + 0.05, rest.z - smooth(age / 0.45) * 0.5); return true; }
+          s.position.copy(rest); s.userData.cocked = false;
           const obj = sys.detach(s), [fx, fz] = fwdOf(tr), sp = 58;
+          sys.snd('cannon', tr.x, tr.z); sys.snd('launch', tr.x, tr.z, 0.8);
           fireball(sys, obj.position.x + fx * 2.5, obj.position.y, obj.position.z + fz * 2.5, 0.35);
           sys.addProjectile({ obj, x: obj.position.x + fx * 1.0, y: obj.position.y, z: obj.position.z + fz * 1.0, vx: fx * sp + tr.vx, vy: 1.2, vz: fz * sp + tr.vz, g: 4, life: 1.6, r: 0.8, owner: tr, keep: true,
             trail: (p) => { if (sys.near(p.x, p.z)) sys.soft.emit(1, (q) => { q.x = p.x; q.y = p.y; q.z = p.z; q.size = 0.25; q.grow = 0.8; q.life = 0.4; q.g = -1; q.color = 0xd9b48a; }); },
@@ -165,23 +182,37 @@ export const MOVES = {
         // each fry gets its own material so it can blink
         const mats = chosen.map((f) => { const m = f.children[0].material; const c = m.clone(); c.emissive = new THREE.Color(0xff1a1a); f.children[0].material = c; f.userData.origMat = m; return c; });
         const targets = sys.enemies(tr).sort((a, b) => sys.dist(tr, a) - sys.dist(tr, b)).filter((v) => sys.dist(tr, v) < 60).slice(0, 5);
-        let launched = 0;
+        let launched = 0, blink = false;
         sys.task(() => (dt, t, age) => {
-          for (let k = launched; k < chosen.length; k++) mats[k].emissiveIntensity = (Math.sin(age * 18) > 0 ? 0.9 : 0.05) * Math.min(1, age * 2);
+          const lit = Math.sin(age * 18) > 0;
+          if (lit && !blink && launched < chosen.length) sys.snd('beep', tr.x, tr.z, 0.7); blink = lit;
+          for (let k = launched; k < chosen.length; k++) mats[k].emissiveIntensity = (lit ? 0.9 : 0.05) * Math.min(1, age * 2);
           const due = age < 1.1 ? 0 : Math.min(chosen.length, 1 + Math.floor((age - 1.1) / 0.32));
           while (launched < due) {
             const f = chosen[launched], m = mats[launched], tgt = targets.length ? targets[launched % targets.length] : null; launched++;
             m.emissiveIntensity = 0.6;
             const obj = sys.detach(f), p0 = obj.position.clone();
+            sys.snd('launch', p0.x, p0.z, 0.85);
             f.children[0].rotation.x = Math.PI / 2; // nose first: the fry's length along its flight
-            const T = 1.3 + Math.random() * 0.3, [fx, fz] = fwdOf(tr);
-            const [tx, tz] = tgt ? lead(tgt, T * 0.8) : [tr.x + fx * 30 + (Math.random() - 0.5) * 10, tr.z + fz * 30 + (Math.random() - 0.5) * 10];
-            const [vx, vy, vz] = lob(p0.x, p0.y, p0.z, tx, sys.groundY(tx, tz) + 1.2, tz, T, 16);
-            sys.addProjectile({ obj, x: p0.x, y: p0.y, z: p0.z, vx, vy, vz, g: 16, life: T + 0.6, r: 0.9, owner: tr, keep: true, face: true,
-              trail: (p) => { if (!sys.near(p.x, p.z)) return; sys.glow.emit(2, (q) => { q.x = p.x - p.vx * 0.02; q.y = p.y - p.vy * 0.02; q.z = p.z - p.vz * 0.02; q.size = 0.22; q.grow = 0.8; q.life = 0.18; q.g = 0; q.color = pick(FIRE); }); sys.soft.emit(1, (q) => { q.x = p.x; q.y = p.y; q.z = p.z; q.size = 0.2; q.grow = 1.4; q.life = 0.7; q.g = -1; q.color = 0x9a9a9a; }); },
+            // boost straight up off the truck, then pitch over onto a tall ballistic arc down onto the target;
+            // the motor burns (thin smoke trail, flame at the tail) through the climb and cuts out over the top
+            const BOOST = 0.42, T = 1.9 + Math.random() * 0.4, [fx, fz] = fwdOf(tr), aim = tgt ? null : [tr.x + fx * 30 + (Math.random() - 0.5) * 10, tr.z + fz * 30 + (Math.random() - 0.5) * 10];
+            let arced = false; const burnOut = BOOST + T * 0.55;
+            sys.addProjectile({ obj, x: p0.x, y: p0.y, z: p0.z, vx: tr.vx * 0.5 + (Math.random() - 0.5) * 1.5, vy: 7, vz: tr.vz * 0.5 + (Math.random() - 0.5) * 1.5, g: -26, life: BOOST + T + 0.8, r: 0.9, owner: tr, keep: true, face: true, walls: false,
+              trail: (p, dt2) => {
+                if (!arced && p.age >= BOOST) {
+                  arced = true; p.g = 16; p.walls = true;
+                  const [tx, tz] = tgt && tgt.alive && !tgt.ko ? lead(tgt, T * 0.85) : aim || [p.x + fx * 30, p.z + fz * 30];
+                  [p.vx, p.vy, p.vz] = lob(p.x, p.y, p.z, tx, sys.groundY(tx, tz) + 1.2, tz, T, 16);
+                }
+                if (p.age > burnOut || !sys.near(p.x, p.z)) return;
+                const sp = Math.hypot(p.vx, p.vy, p.vz) || 1, bx = -p.vx / sp, by = -p.vy / sp, bz = -p.vz / sp;
+                sys.glow.emit(1, (q) => { q.x = p.x + bx * 0.7; q.y = p.y + by * 0.7; q.z = p.z + bz * 0.7; q.vx = bx * 8; q.vy = by * 8; q.vz = bz * 8; q.size = 0.16; q.grow = 0.6; q.life = 0.1; q.g = 0; q.color = pick(FIRE); });
+                for (let k = 0; k < 2; k++) sys.soft.emit(1, (q) => { const f = k * 0.5 * dt2; q.x = p.x + bx * 0.8 - p.vx * f; q.y = p.y + by * 0.8 - p.vy * f; q.z = p.z + bz * 0.8 - p.vz * f; q.vx = (Math.random() - 0.5) * 0.4; q.vy = 0.3; q.vz = (Math.random() - 0.5) * 0.4; q.g = 0; q.drag = 1; q.size = 0.12; q.grow = 0.45; q.life = 1.3 + Math.random() * 0.4; q.alpha = 0.55; q.color = 0xd8d4cf; q.spin = 0.5; });
+              },
               onHit: (v, p) => { sys.hit(tr, v, { kind: 'missile', dmg: 26, push: [p.vx * 0.35, p.vz * 0.35, 6], knock: 'side', award: 25, label: 'DIRECT HIT!' }); },
               onEnd: (p) => {
-                fireball(sys, p.x, p.y, p.z, 0.8); sys.shake(p.x, p.z, 0.6); sys.audio.thud?.();
+                fireball(sys, p.x, p.y, p.z, 0.8); sys.shake(p.x, p.z, 0.6);
                 for (const v of sys.enemies(tr)) { const d = Math.hypot(v.x - p.x, v.z - p.z); if (d < 4.5 && !p.hits.has(v)) sys.hit(tr, v, { kind: 'blast', dmg: 9 * (1 - d / 4.5) + 3, push: [(v.x - p.x) / (d || 1) * 10, (v.z - p.z) / (d || 1) * 10, 4], award: 8 }); }
                 f.children[0].material = f.userData.origMat; f.children[0].rotation.x = 0; sys.regrow(tr, f, 2.5 + Math.random());
               } });
@@ -208,19 +239,27 @@ export const MOVES = {
       start(sys, tr, done) {
         const mac = sys.part(tr, 'mac'), body = tr.mesh.userData.body;
         const gun = A.cheeseCannon(); gun.position.set(0, 1.55, -0.1); gun.scale.setScalar(1.1); body.add(gun);
-        const macRest = mac ? mac.position.clone() : null;
+        sys.snd('deploy', tr.x, tr.z); let stowing = false;
+        const macRest = mac ? mac.position.clone() : null, yoke = gun.userData.yoke;
+        yoke.rotation.order = 'YXZ'; // a turret: traverse, then elevate the barrel
         let shots = 0, target = null;
         sys.task(() => (dt, t, age) => {
           const up = smooth(age / 0.7) * (1 - smooth((age - 3.4) / 0.6));
           if (mac) { mac.position.set(macRest.x, macRest.y - up * 1.15, macRest.z); mac.scale.set(1, 1 - up * 0.6, 1); }
           gun.position.y = 1.55 + up * 0.85;
-          // aim: the nearest truck in front, else straight ahead
+          // aim: lead the nearest truck in front (else straight ahead), allowing for the drop of each round
           if (age > 0.6) {
             target = sys.nearest(tr, 45, (v) => sys.inFront(tr, v, 45, 1.0));
-            let yaw = 0, pitch = 0;
-            if (target) { const a = Math.atan2(target.x - tr.x, target.z - tr.z); yaw = Math.max(-1, Math.min(1, ((a - tr.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI)); pitch = -Math.atan2(1.2, sys.dist(tr, target)); }
-            gun.userData.yoke.rotation.y += (yaw - gun.userData.yoke.rotation.y) * Math.min(1, dt * 8);
-            gun.userData.yoke.rotation.x += (pitch - gun.userData.yoke.rotation.x) * Math.min(1, dt * 8);
+            let yaw = 0, pitch = 0.04;
+            if (target) {
+              const d = sys.dist(tr, target), tof = d / 70, [lx, lz] = lead(target, tof);
+              gun.updateWorldMatrix(true, false);
+              const loc = gun.worldToLocal(_c.set(lx, target.y + 1.5 + 0.5 * 6 * tof * tof, lz)).sub(yoke.position);
+              yaw = Math.max(-1.4, Math.min(1.4, Math.atan2(loc.x, loc.z)));
+              pitch = Math.max(-0.35, Math.min(0.5, -Math.atan2(loc.y - 0.45, Math.hypot(loc.x, loc.z))));
+            }
+            yoke.rotation.y += (yaw - yoke.rotation.y) * Math.min(1, dt * 9);
+            yoke.rotation.x += (pitch - yoke.rotation.x) * Math.min(1, dt * 9);
           }
           const due = age < 1.0 ? 0 : Math.min(10, 1 + Math.floor((age - 1.0) / 0.2));
           while (shots < due) {
@@ -229,12 +268,14 @@ export const MOVES = {
             const muzzle = gun.userData.yoke.localToWorld(_a.copy(gun.userData.muzzle)), dir = _b.set(0, 0, 1).transformDirection(gun.userData.yoke.matrixWorld);
             sys.glow.emit(6, (q) => { q.x = muzzle.x; q.y = muzzle.y; q.z = muzzle.z; q.vx = dir.x * 8 + (Math.random() - 0.5) * 3; q.vy = dir.y * 8 + (Math.random() - 0.5) * 3; q.vz = dir.z * 8 + (Math.random() - 0.5) * 3; q.size = 0.3; q.grow = 1.5; q.life = 0.1; q.g = 0; q.color = pick([0xffe08a, 0xffb02a]); });
             gun.userData.yoke.position.z = -0.12; // recoil
-            const obj = A.whizGlob(), sp = 70;
-            sys.addProjectile({ obj, x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: dir.x * sp + tr.vx, vy: dir.y * sp + 1, vz: dir.z * sp + tr.vz, g: 6, life: 1.0, r: 0.7, owner: tr, face: true,
-              onHit: (v) => { v._whiz = (v._whiz || 0) + 1; sys.hit(tr, v, { kind: 'whiz', dmg: 5, push: [dir.x * 4, dir.z * 4, 0], blind: { kind: 'cheese', secs: 2.5, amount: 0.6 + Math.min(2.4, v._whiz * 0.3) }, award: 4 }); splashAt(sys, v.x, v.y + 2, v.z, 0xffa51f, 10, 4); sys.after(4, () => { v._whiz = Math.max(0, (v._whiz || 1) - 1); }); },
+            sys.snd('cannon', muzzle.x, muzzle.z);
+            const obj = A.whizGlob(), sp = 70, hx = dir.x, hz = dir.z; // (dir is a shared scratch vector)
+            sys.addProjectile({ obj, x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: dir.x * sp + tr.vx, vy: dir.y * sp, vz: dir.z * sp + tr.vz, g: 6, life: 1.0, r: 0.8, owner: tr, face: true,
+              onHit: (v, p) => { v._whiz = (v._whiz || 0) + 1; sys.hit(tr, v, { kind: 'whiz', dmg: 5, push: [hx * 4, hz * 4, 0], blind: { kind: 'cheese', secs: 2.5, amount: 0.6 + Math.min(2.4, v._whiz * 0.3) }, award: 4 }); splashAt(sys, p.x, p.y, p.z, 0xffa51f, 14, 4, 0.3); cheeseSplotch(sys, v, p, v._whiz); sys.after(4, () => { v._whiz = Math.max(0, (v._whiz || 1) - 1); }); },
               onEnd: (p) => splashAt(sys, p.x, p.y, p.z, 0xffa51f, 6, 3) });
           }
           gun.userData.yoke.position.z *= Math.exp(-dt * 12);
+          if (age > 3.4 && !stowing) { stowing = true; sys.snd('retract', tr.x, tr.z); }
           if (age > 4.05) { gun.removeFromParent(); if (mac) { mac.position.copy(macRest); mac.scale.set(1, 1, 1); } done(); return false; }
           return true;
         });
@@ -248,6 +289,7 @@ export const MOVES = {
       bot: anyNear(12),
       start(sys, tr, done) {
         const cx = tr.x, cz = tr.z;
+        sys.snd('rise', cx, cz);
         for (let k = 0; k < 7; k++) {
           const a = tr.heading + Math.PI + (k - 3) * 0.52, R = 7.5 + (k % 2) * 1.5, x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R, gy = sys.groundY(x, z);
           const obj = A.cactus(k); obj.rotation.y = Math.random() * 6.28; obj.position.set(x, gy - 3.4, z);
@@ -271,17 +313,19 @@ export const MOVES = {
         const b = sys.part(tr, 'burrito');
         if (!b) { done(); return; }
         sys.task(() => (dt, t, age) => {
-          if (age < 0.4) { b.rotation.y = smooth(age / 0.4) * Math.PI / 2; return true; }
+          if (age < 0.4) { if (!b.userData.swung) { b.userData.swung = true; sys.snd('deploy', tr.x, tr.z, 0.8); } b.rotation.y = smooth(age / 0.4) * Math.PI / 2; return true; }
           if (age < 0.6) { b.position.y = (b.userData.rest?.[1] ?? 2.6) - 0.12 * smooth((age - 0.4) / 0.2); return true; } // spring loads
           b.rotation.y = Math.PI / 2;
+          b.userData.swung = false;
           const obj = sys.detach(b), [fx, fz] = fwdOf(tr), ax = [Math.cos(tr.heading), -Math.sin(tr.heading)];
+          sys.snd('boing', tr.x, tr.z);
           softRing(sys, obj.position.x, obj.position.y - 0.4, obj.position.z, 0xf3e3c3, 3, 18);
           const roll = { a: 0 };
           sys.addProjectile({ obj, x: obj.position.x + fx * 2, y: obj.position.y + 0.3, z: obj.position.z + fz * 2, vx: fx * 30 + tr.vx, vy: 6, vz: fz * 30 + tr.vz, g: 24, drag: 0.25, life: 5.5, r: 1.6, owner: tr, keep: true, pierce: true, groundR: 0.5,
             onGround: (p) => { if (p.vy < -4) { sys.fx.debris(p.x, p.y, p.z, 8, 0x8c6d45); p.vy = -p.vy * 0.25; } else p.vy = 0; return Math.hypot(p.vx, p.vz) < 4; },
             trail: (p, dt2) => { const sp = Math.hypot(p.vx, p.vz); roll.a += sp * dt2 / 0.5; obj.rotation.set(0, Math.atan2(ax[0], ax[1]), 0); obj.rotateOnAxis(_c.set(0, 0, 1), -roll.a); if (sys.near(p.x, p.z) && Math.random() < 0.4) sys.soft.emit(1, (q) => { q.x = p.x; q.y = 0.3; q.z = p.z; q.size = 0.3; q.grow = 1; q.life = 0.5; q.g = -1; q.color = 0xb59a78; }); },
             onHit: (v, p) => { const sp = Math.hypot(p.vx, p.vz) || 1; sys.hit(tr, v, { kind: 'roll', dmg: 30, push: [p.vx / sp * 24, p.vz / sp * 24, 5], knock: 'side', award: 30, label: 'BURRITO ROLL!' }); splashAt(sys, v.x, v.y + 1.5, v.z, 0xf9e4b7, 14); p.vx *= 0.8; p.vz *= 0.8; sys.shake(v.x, v.z, 0.7); return false; },
-            onEnd: (p) => { splashAt(sys, p.x, p.y, p.z, 0xc8452c, 18); splashAt(sys, p.x, p.y, p.z, 0xf9e4b7, 12); sys.regrow(tr, b, 1.2); } });
+            onEnd: (p) => { sys.snd('splat', p.x, p.z); splashAt(sys, p.x, p.y, p.z, 0xc8452c, 18); splashAt(sys, p.x, p.y, p.z, 0xf9e4b7, 12); sys.regrow(tr, b, 1.2); } });
           done(); return false;
         });
       },
@@ -294,6 +338,7 @@ export const MOVES = {
       bot: nearOrFront(32, 0.4),
       start(sys, tr, done) {
         const net = A.noodleNet(false), [fx, fz] = fwdOf(tr), p0 = sys.worldPoint(tr, [0, 1.6, 2.9]);
+        sys.snd('net', tr.x, tr.z);
         net.scale.setScalar(0.25);
         sys.addProjectile({ obj: net, x: p0.x, y: p0.y, z: p0.z, vx: fx * 46 + tr.vx, vy: 0.5, vz: fz * 46 + tr.vz, g: 2, life: 1.3, r: 1.6, owner: tr,
           trail: (p) => { const k = Math.min(1, p.age / 0.3); net.scale.setScalar(0.25 + 0.75 * k); net.rotation.set(0, Math.atan2(p.vx, p.vz), Math.sin(p.age * 8) * 0.15); },
@@ -308,9 +353,10 @@ export const MOVES = {
         const v = sys.nearest(tr, 18);
         const ang = v ? Math.atan2(v.x - tr.x, v.z - tr.z) - tr.heading : 0; // direction to pour, in truck space
         const dl = [Math.sin(ang), Math.cos(ang)];
-        let poured = false;
+        let poured = false, sounded = false;
         sys.task(() => (dt, t, age) => {
           const tip = smooth(age / 0.45) * (1 - smooth((age - 1.6) / 0.5));
+          if (!sounded && tip > 0.6) { sounded = true; sys.snd('pour', tr.x, tr.z); sys.snd('splash', tr.x, tr.z, 0.7); }
           if (bowl) {
             // tip over the rim on the pouring side, so the bowl rolls up onto its edge instead of sinking into the roof
             const rest = bowl.userData.rest || [0, 2.3, -0.05], bb = bowl.userData.bbox, R = bb ? (bb[3] - bb[0]) * 0.32 : 0.75;
@@ -323,8 +369,8 @@ export const MOVES = {
             if (sys.near(lip.x, lip.z)) { emitStream(sys, lip, dir, 9, [0xe07a2a, 0xd9682a, 0xf6c66b], 5, 0.3, 0.5, 14, tr); emitStream(sys, lip, dir, 8, 0xf2c94c, 1, 0.12, 0.6, 14, tr); }
             if (!poured) {
               poured = true;
-              const wd = Math.atan2(dir.x, dir.z);
-              for (const o of sys.enemies(tr)) { const dx = o.x - lip.x, dz = o.z - lip.z, d = Math.hypot(dx, dz); if (d < 13 && Math.abs(((Math.atan2(dx, dz) - wd + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.75) sys.after(d / 14, () => { sys.hit(tr, o, { kind: 'soup', dmg: 30, blind: { kind: 'soup', secs: 2.6 }, push: [dir.x * 8, dir.z * 8, 2], burn: 2, award: 30, label: 'SOUP\'S ON!' }); if (sys.near(o.x, o.z)) sys.fx.smoke(o.x, o.y + 2, o.z, 6, 0xffffff, 0.8); }); }
+              const wd = Math.atan2(dir.x, dir.z), px = dir.x, pz = dir.z; // (dir is a shared scratch vector)
+              for (const o of sys.enemies(tr)) { const dx = o.x - lip.x, dz = o.z - lip.z, d = Math.hypot(dx, dz); if (d < 13 && Math.abs(((Math.atan2(dx, dz) - wd + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.75) sys.after(d / 14, () => { sys.hit(tr, o, { kind: 'soup', dmg: 30, blind: { kind: 'soup', secs: 2.6 }, push: [px * 8, pz * 8, 2], burn: 2, award: 30, label: 'SOUP\'S ON!' }); if (sys.near(o.x, o.z)) sys.fx.smoke(o.x, o.y + 2, o.z, 6, 0xffffff, 0.8); }); }
             }
           }
           if (age > 2.2) { if (bowl) { bowl.rotation.set(0, 0, 0); bowl.position.fromArray(bowl.userData.rest || [0, 2.3, -0.05]); } done(); return false; }
@@ -340,6 +386,7 @@ export const MOVES = {
       bot: anyNear(9),
       start(sys, tr, done) {
         const sp = A.churroSpinner(), body = tr.mesh.userData.body; sp.position.set(0, 0.22, -0.1); sp.scale.set(1, 0.01, 1); body.add(sp);
+        sys.snd('deploy', tr.x, tr.z); const whirr = sys.sndLoop('spinner', () => tr); let folding = false;
         const rotor = sp.userData.rotor; let w = 0, stopping = false;
         sys.task(() => (dt, t, age) => {
           // the arm drops out of the chassis, then the churro telescopes out to full length (and back in at the end)
@@ -363,6 +410,7 @@ export const MOVES = {
               if (sys.near(v.x, v.z)) splashAt(sys, v.x, 0.8, v.z, 0xf6e7c8, 10, 3, 0.15);
             }
           }
+          if (age > 10.3 && !folding) { folding = true; whirr.stop(); sys.snd('retract', tr.x, tr.z); }
           if (age > 10.95) { sp.removeFromParent(); done(); return false; }
           return true;
         });
@@ -373,13 +421,15 @@ export const MOVES = {
       start(sys, tr, done) {
         const ch = sys.part(tr, 'churros');
         const muzzles = [[-0.36, 2.55, 2.1], [0.36, 2.55, 2.1], [0, 2.55, 2.1], [0.16, 2.95, 2.1], [-0.16, 2.95, 2.1]];
-        let fired = 0;
+        let fired = 0, tilted = false, settled = false;
         sys.task(() => (dt, t, age) => {
           const tilt = smooth(age / 0.4) * (1 - smooth((age - 2.0) / 0.4));
           if (ch) ch.rotation.x = -0.14 * tilt;
+          if (!tilted) { tilted = true; sys.snd('deploy', tr.x, tr.z, 0.8); }
           const due = age < 0.5 ? 0 : Math.min(5, 1 + Math.floor((age - 0.5) / 0.25));
           while (fired < due) {
             const m = muzzles[fired]; fired++;
+            sys.snd('pop', tr.x, tr.z, 0.7); sys.snd('whoosh', tr.x, tr.z, 0.5);
             const p0 = sys.worldPoint(tr, [m[0], m[1] + 0.3 * tilt, m[2] + 0.2], _a), [fx, fz] = fwdOf(tr), spread = (fired - 3) * 0.13;
             const sp = 24, dx = Math.sin(tr.heading + spread), dz = Math.cos(tr.heading + spread);
             sys.glow.emit(5, (q) => { q.x = p0.x; q.y = p0.y; q.z = p0.z; q.vx = fx * 6; q.vz = fz * 6; q.vy = 3; q.size = 0.25; q.grow = 1.2; q.life = 0.12; q.g = 0; q.color = 0xffd08a; });
@@ -390,13 +440,14 @@ export const MOVES = {
               onHit: (v, p) => { sys.hit(tr, v, { kind: 'grenade', dmg: 30, push: [p.vx * 0.4, p.vz * 0.4, 6], knock: 'side', award: 25, label: 'DIRECT HIT!' }); },
               onEnd: (p) => {
                 fireball(sys, p.x, p.y + 0.4, p.z, 0.55);
-                const x = p.x, z = p.z;
+                const x = p.x, z = p.z; sys.snd('hiss', x, z, 0.6);
                 // a lingering cloud of cinnamon sugar that keeps hurting
                 sys.addHazard({ x, z, r: 4.6, life: 3.2, owner: tr, every: 0.5, ownerSafe: true,
                   update: (dt2, t2, h) => { if (sys.near(x, z) && Math.random() < 0.7) sys.soft.emit(2, (q) => { const a = Math.random() * 6.28, r = Math.random() * 4.4; q.x = x + Math.cos(a) * r; q.y = 0.6 + Math.random() * 2.5; q.z = z + Math.sin(a) * r; q.vx = (Math.random() - 0.5); q.vz = (Math.random() - 0.5); q.vy = 0.6; q.g = 0; q.drag = 1; q.size = 1.0; q.grow = 1.2; q.life = 1.4; q.alpha = 0.6; q.color = pick([0xc68a4e, 0xe9d4b0, 0xf6ead2, 0xa86a35]); }); if (sys.near(x, z) && Math.random() < 0.5) sys.glow.emit(1, (q) => { q.x = x + (Math.random() - 0.5) * 7; q.y = 0.5 + Math.random() * 2.6; q.z = z + (Math.random() - 0.5) * 7; q.vy = -0.4; q.g = 0; q.size = 0.06; q.life = 0.5; q.color = 0xfff1c0; }); },
                   onEnter: (v) => sys.hit(tr, v, { kind: 'sugar', dmg: 4, blind: { kind: 'sugar', secs: 0.8, amount: 0.5 }, award: 3 }) });
               } });
           }
+          if (age > 2.0 && !settled) { settled = true; sys.snd('retract', tr.x, tr.z, 0.7); }
           if (age > 2.5) { if (ch) ch.rotation.x = 0; done(); return false; }
           return true;
         });
@@ -409,14 +460,14 @@ export const MOVES = {
     light: { // Hoagie Smash: the truck bounces, then slams the ground: everyone nearby spins out
       bot: anyNear(10),
       start(sys, tr, done) {
-        tr.impulse(0, 0, 8 * tr.mass); tr.bounce = 0.4;
+        tr.impulse(0, 0, 8 * tr.mass); tr.bounce = 0.4; sys.snd('boing', tr.x, tr.z);
         let slammed = false;
         sys.task(() => (dt, t, age) => {
           if (!slammed && age > 0.3 && !tr.airborne) {
             slammed = true; tr.bounce = 0.8;
             const R = 12; softRing(sys, tr.x, 0.3, tr.z, 0xb59a78, R * 0.75, 40); sys.fx.debris(tr.x, 0.4, tr.z, 24, 0x6d5a45);
             sys.glow.emit(20, (q) => { const a = Math.random() * 6.28; q.x = tr.x + Math.cos(a) * 3; q.y = 0.4; q.z = tr.z + Math.sin(a) * 3; q.vx = Math.cos(a) * 18; q.vz = Math.sin(a) * 18; q.vy = 0.5; q.g = 0; q.drag = 2; q.size = 0.35; q.life = 0.35; q.color = 0xd0a0ff; });
-            sys.shake(tr.x, tr.z, 1.4); sys.audio.thud?.();
+            sys.shake(tr.x, tr.z, 1.4); sys.snd('stomp', tr.x, tr.z);
             for (const v of sys.enemies(tr)) { const d = sys.dist(tr, v); if (d < R) { const nx = (v.x - tr.x) / (d || 1), nz = (v.z - tr.z) / (d || 1); sys.hit(tr, v, { kind: 'smash', spin: 1.6, push: [nx * 9, nz * 9, 4], dmg: 6, award: 12, label: 'SPUN OUT!' }); } }
           }
           if (age > 1.2 || (slammed && age > 0.5)) { done(); return false; }
@@ -430,6 +481,7 @@ export const MOVES = {
         const sw = sys.part(tr, 'sandwich');
         if (!sw) { done(); return; }
         const kit = A.droneKit(3.8); kit.position.set(0, 0.45, 0.2); sw.add(kit);
+        sys.snd('deploy', tr.x, tr.z); let lit = false;
         for (const o of [...kit.userData.wings, kit.userData.fin, kit.userData.stab, kit.userData.eng]) o.scale.setScalar(0.01);
         let target = sys.nearest(tr, 90);
         sys.task(() => (dt, t, age) => {
@@ -437,18 +489,20 @@ export const MOVES = {
           const k = smooth(age / 0.9);
           kit.userData.wings.forEach((w, i) => w.scale.set(i % 2 === 0 ? (w.position.x < 0 ? -k : k) : k, Math.max(0.01, k), Math.max(0.01, k)));
           for (const o of [kit.userData.fin, kit.userData.stab, kit.userData.eng]) o.scale.setScalar(Math.max(0.01, k));
+          if (age > 0.9 && !lit) { lit = true; sys.snd('ignite', tr.x, tr.z); }
           if (age > 0.9) { kit.userData.flame.visible = true; kit.userData.flame.scale.set(1, 1, 0.6 + Math.random() * 0.5); }
           if (age < 1.6) { if (age > 0.9) sw.position.y = (sw.userData.rest?.[1] ?? 2.2) + smooth((age - 0.9) / 0.7) * 1.6; return true; }
           // lift off: the drone leaves the truck and hunts
-          const obj = sys.detach(sw), sp = 30;
+          const obj = sys.detach(sw), sp = 30, pos = { x: obj.position.x, z: obj.position.z };
+          sys.snd('launch', pos.x, pos.z); const jet = sys.sndLoop('jet', () => pos);
           const [fx, fz] = fwdOf(tr);
           sys.addProjectile({ obj, x: obj.position.x, y: obj.position.y, z: obj.position.z, vx: fx * 8 + tr.vx, vy: 6, vz: fz * 8 + tr.vz, life: 10, r: 1.4, owner: tr, keep: true, face: true, walls: false,
             home: { target, turn: 1.8, speed: sp, alt: (p) => { const tg = p.home.target; return tg && Math.hypot(tg.x - p.x, tg.z - p.z) > 16 ? 7 : 1.2; } },
-            trail: (p) => { if (!p.home.target) p.home.target = sys.nearest(tr, 90); if (sys.near(p.x, p.z)) { const back = _a.set(-p.vx, -p.vy, -p.vz).normalize(); sys.glow.emit(3, (q) => { q.x = p.x + back.x * 2.3; q.y = p.y + 1.0 + back.y * 2.3; q.z = p.z + back.z * 2.3; q.vx = back.x * 10; q.vy = back.y * 10; q.vz = back.z * 10; q.size = 0.3; q.grow = 1.4; q.life = 0.18; q.g = 0; q.color = pick(FIRE); }); sys.soft.emit(1, (q) => { q.x = p.x + back.x * 2.6; q.y = p.y + 1; q.z = p.z + back.z * 2.6; q.size = 0.3; q.grow = 1.6; q.life = 0.8; q.g = -0.5; q.color = 0x8a8a8a; }); } },
+            trail: (p) => { pos.x = p.x; pos.z = p.z; if (!p.home.target) p.home.target = sys.nearest(tr, 90); if (sys.near(p.x, p.z)) { const back = _a.set(-p.vx, -p.vy, -p.vz).normalize(); sys.glow.emit(3, (q) => { q.x = p.x + back.x * 2.3; q.y = p.y + 1.0 + back.y * 2.3; q.z = p.z + back.z * 2.3; q.vx = back.x * 10; q.vy = back.y * 10; q.vz = back.z * 10; q.size = 0.3; q.grow = 1.4; q.life = 0.18; q.g = 0; q.color = pick(FIRE); }); sys.soft.emit(1, (q) => { q.x = p.x + back.x * 2.6; q.y = p.y + 1; q.z = p.z + back.z * 2.6; q.size = 0.3; q.grow = 1.6; q.life = 0.8; q.g = -0.5; q.color = 0x8a8a8a; }); } },
             onGround: () => true,
             onHit: (v, p) => { sys.hit(tr, v, { kind: 'drone', dmg: 48, push: [p.vx * 0.5, p.vz * 0.5, 9], knock: true, award: 45, label: 'BLT-9 STRIKE!' }); },
             onEnd: (p) => {
-              fireball(sys, p.x, p.y, p.z, 1.4); sys.shake(p.x, p.z, 1.6); sys.audio.crash?.();
+              jet.stop(); fireball(sys, p.x, p.y, p.z, 1.4); sys.shake(p.x, p.z, 1.6);
               for (const v of sys.enemies(tr)) { const d = Math.hypot(v.x - p.x, v.z - p.z); if (d < 7 && !p.hits.has(v)) sys.hit(tr, v, { kind: 'blast', dmg: 14 * (1 - d / 7) + 4, push: [(v.x - p.x) / (d || 1) * 14, (v.z - p.z) / (d || 1) * 14, 6], award: 10 }); }
               kit.removeFromParent(); obj.rotation.set(0, 0, 0); sys.regrow(tr, sw, 2.5);
             } });
@@ -464,6 +518,7 @@ export const MOVES = {
       bot: anyNear(10),
       start(sys, tr, done) {
         const R = 12, x0 = tr.x, z0 = tr.z;
+        sys.snd('hiss', x0, z0); sys.snd('freeze', x0, z0);
         sys.task(() => (dt, t, age) => {
           const r = R * smooth(age / 1.0);
           if (sys.near(x0, z0)) {
@@ -482,6 +537,7 @@ export const MOVES = {
         const cone = sys.part(tr, 'cone'), scoops = sys.part(tr, 'scoops'), body = tr.mesh.userData.body;
         const rest = cone ? cone.position.clone() : new THREE.Vector3(0, 2.85, -0.3);
         const beam = A.laserBeam(); beam.visible = false; sys.group.add(beam);
+        sys.snd('deploy', tr.x, tr.z); let hum = null, charged = false, back = false;
         const gim = A.gimbal(0.95); gim.position.set(rest.x, rest.y - 0.05, rest.z); gim.scale.setScalar(0.01); body.add(gim);
         let tick = 0;
         sys.task(() => (dt, t, age) => {
@@ -494,6 +550,9 @@ export const MOVES = {
           gim.userData.yaw.rotation.y = Math.PI * swing; gim.userData.pitch.rotation.x = Math.sin(swing * Math.PI) * 0.6 + (age > 0.95 && age < 6.95 ? Math.sin(age * 30) * 0.02 : 0);
           if (scoops) scoops.rotation.set(Math.sin(age * 9) * 0.03 * swing, Math.sin(age * 5) * 0.05 * swing, 0);
           const firing = age > 0.95 && age < 6.95;
+          if (!charged && age > 0.45) { charged = true; sys.snd('zap', tr.x, tr.z); }
+          if (firing && !hum) hum = sys.sndLoop('laser', () => tr);
+          if (!firing && hum && !back) { back = true; hum.stop(); sys.snd('retract', tr.x, tr.z); }
           beam.visible = firing;
           if (firing) {
             const tip = sys.worldPoint(tr, [rest.x, rest.y + 0.15, rest.z + 0.2 + 2.6], _a), dir = sys.worldDir(tr, [0, -0.04, 1], _b).normalize();
@@ -512,7 +571,7 @@ export const MOVES = {
               tick -= dt; if (tick <= 0) { tick = 0.25; sys.hit(tr, victim, { kind: 'laser', dmg: 4, award: 3, label: 'LASERED!' }); if (victim.isPlayer) sys.game.hud.splat?.('laser', 0.5, 0.4); }
             }
           }
-          if (age > 7.95) { beam.removeFromParent(); gim.removeFromParent(); if (cone) { cone.rotation.set(0, 0, 0); cone.position.copy(rest); } if (scoops) scoops.rotation.set(0, 0, 0); done(); return false; }
+          if (age > 7.95) { hum?.stop(); beam.removeFromParent(); gim.removeFromParent(); if (cone) { cone.rotation.set(0, 0, 0); cone.position.copy(rest); } if (scoops) scoops.rotation.set(0, 0, 0); done(); return false; }
           return true;
         });
       },
@@ -529,11 +588,14 @@ export const MOVES = {
         const hinge = new THREE.Vector3(0, bb[1], bb[2]); // back bottom edge
         const bottle = A.squeezeBottle(); bottle.position.set(0, 2.5, (bb[2] + bb[5]) / 2 - 0.6); bottle.scale.setScalar(0.01); body.add(bottle);
         const target = sys.nearest(tr, 30, (v) => sys.inFront(tr, v, 30, 0.45));
-        let squirted = false;
+        let squirted = false, squished = false, shut = false;
+        sys.snd('deploy', tr.x, tr.z, 0.8);
         sys.task(() => (dt, t, age) => {
           const open = smooth(age / 0.3) * (1 - smooth((age - 1.4) / 0.3)), ang = -0.32 * open;
           if (gy) { const r = _a.copy(rest).sub(hinge).applyAxisAngle(_b.set(1, 0, 0), ang); gy.position.copy(hinge).add(r); gy.rotation.x = ang; }
           bottle.scale.setScalar(Math.max(0.01, open)); bottle.position.z = (bb[2] + bb[5]) / 2 - 0.6 + open * 1.4; bottle.position.y = 2.5 + open * 0.25;
+          if (age > 0.4 && !squished) { squished = true; sys.snd('squirt', tr.x, tr.z); }
+          if (age > 1.4 && !shut) { shut = true; sys.snd('retract', tr.x, tr.z, 0.7); }
           if (age > 0.4 && age < 0.95) {
             const tip = sys.worldPoint(tr, [0, 2.75, (bb[2] + bb[5]) / 2 + 2.3], _a), dir = sys.worldDir(tr, [0, 0.05, 1], _b).normalize();
             if (target) { _c.set(target.x - tip.x, target.y + 2 - tip.y, target.z - tip.z).normalize(); dir.lerp(_c, 0.7).normalize(); }
@@ -552,6 +614,7 @@ export const MOVES = {
         const bb = gy?.userData.bbox || [-0.8, 2.1, -1.8, 0.8, 3.4, 1.3], rest = gy ? gy.position.clone() : null;
         const hinge = new THREE.Vector3(0, bb[1], bb[5]); // front bottom edge
         const statue = A.trojanGyro(); statue.scale.setScalar(0.55); statue.position.set(0, 2.3, -0.3); statue.visible = false; body.add(statue);
+        sys.snd('deploy', tr.x, tr.z); let slid = false, shut = false;
         let dropped = false;
         sys.task(() => (dt, t, age) => {
           const open = smooth(age / 0.35) * (1 - smooth((age - 1.5) / 0.35)), ang = 0.42 * open;
@@ -559,16 +622,17 @@ export const MOVES = {
           if (age > 0.35 && !dropped) {
             // slide out backwards, growing to full size as it leaves the roof
             statue.visible = true; const k = smooth((age - 0.35) / 0.6);
+            if (!slid) { slid = true; sys.snd('whoosh', tr.x, tr.z, 0.7); }
             statue.position.set(0, 2.3 + Math.sin(k * Math.PI) * 0.6 - k * 1.0, -0.3 - k * 3.4); statue.scale.setScalar(0.55 + 0.45 * k); statue.rotation.x = -k * 0.3;
             if (k >= 1) {
               dropped = true;
               const w = sys.detach(statue); w.rotation.set(0, tr.heading + Math.PI, 0); const x = w.position.x, z = w.position.z, gy0 = sys.groundY(x, z);
               let vy = 0;
               const h = sys.addHazard({ obj: w, x, z, r: 1.7, life: 22, owner: tr, solid: true, every: 0, ownerSafe: true,
-                update: (dt2, t2, hz) => { if (w.position.y > gy0) { vy -= 30 * dt2; w.position.y = Math.max(gy0, w.position.y + vy * dt2); if (w.position.y === gy0) { sys.fx.debris(x, gy0 + 0.3, z, 10, 0x8c6d45); sys.audio.thud?.(); } } },
+                update: (dt2, t2, hz) => { if (w.position.y > gy0) { vy -= 30 * dt2; w.position.y = Math.max(gy0, w.position.y + vy * dt2); if (w.position.y === gy0) { sys.fx.debris(x, gy0 + 0.3, z, 10, 0x8c6d45); sys.snd('thwap', x, z); sys.snd('crunch', x, z, 0.5); } } },
                 onEnter: (v, hz) => {
                   if (hz.age < 0.8) return;
-                  hz.dead = true; fireball(sys, x, gy0 + 1.5, z, 1.8); sys.fx.debris(x, gy0 + 2, z, 30, 0xa06b38); sys.shake(x, z, 2); sys.audio.crash?.();
+                  hz.dead = true; fireball(sys, x, gy0 + 1.5, z, 1.8); sys.fx.debris(x, gy0 + 2, z, 30, 0xa06b38); sys.shake(x, z, 2); sys.snd('crunch', x, z);
                   for (const o of sys.trucks) {
                     if (!o.alive || o.ko || o === tr) continue; const d = Math.hypot(o.x - x, o.z - z); if (d > 10) continue;
                     const nx = (o.x - x) / (d || 1), nz = (o.z - z) / (d || 1), direct = o === v;
@@ -578,6 +642,7 @@ export const MOVES = {
               h.obj.position.y = w.position.y;
             }
           }
+          if (age > 1.5 && !shut) { shut = true; sys.snd('retract', tr.x, tr.z, 0.7); }
           if (age > 1.9 && dropped) { if (gy) { gy.position.copy(rest); gy.rotation.x = 0; } done(); return false; }
           return true;
         });
@@ -591,6 +656,7 @@ export const MOVES = {
       bot: anyBehind(18),
       start(sys, tr, done) {
         const kit = A.butterStick(), body = tr.mesh.userData.body; kit.position.set(0, 1.1, -2.6); body.add(kit);
+        sys.snd('deploy', tr.x, tr.z); let stowed = false;
         let lastX = null, lastZ = null;
         sys.task(() => (dt, t, age) => {
           const down = smooth(age / 0.4) * (1 - smooth((age - 3.4) / 0.4));
@@ -608,6 +674,8 @@ export const MOVES = {
               lastX = x; lastZ = z;
             }
           }
+          if (age > 3.4 && !stowed) { stowed = true; sys.snd('retract', tr.x, tr.z); }
+          if (age > 0.4 && age < 3.4 && Math.random() < dt * 3) sys.snd('splat', tr.x, tr.z, 0.35); // the butter squelching along
           if (age > 3.85) { kit.removeFromParent(); done(); return false; }
           return true;
         });
@@ -617,6 +685,7 @@ export const MOVES = {
       bot: nearOrFront(34, 0.3),
       start(sys, tr, done) {
         const tur = A.eggTurret(), body = tr.mesh.userData.body; tur.position.set(0, 1.9, 1.35); tur.scale.set(1, 0.01, 1); body.add(tur);
+        sys.snd('deploy', tr.x, tr.z); let stowed = false;
         let fired = 0;
         sys.task(() => (dt, t, age) => {
           const up = smooth(age / 0.5) * (1 - smooth((age - 6.8) / 0.4));
@@ -625,16 +694,17 @@ export const MOVES = {
           const due = age < 0.6 ? 0 : Math.min(100, Math.floor((age - 0.6) / 0.06));
           while (fired < due) {
             fired++;
-            tur.updateWorldMatrix(true, true);
+            tur.updateWorldMatrix(true, true); sys.snd('pock', tr.x, tr.z);
             const m = gun.localToWorld(_a.copy(tur.userData.muzzle)), dir = _b.set((Math.random() - 0.5) * 0.06, 0.02 + Math.random() * 0.03, 1).transformDirection(gun.matrixWorld);
             gun.position.z = -0.08;
             if (sys.near(m.x, m.z)) sys.glow.emit(1, (q) => { q.x = m.x; q.y = m.y; q.z = m.z; q.size = 0.25; q.grow = 1; q.life = 0.06; q.g = 0; q.color = 0xffe08a; });
-            const sp = 60;
+            const sp = 60, ex = dir.x, ez = dir.z;
             sys.addProjectile({ obj: A.egg(), x: m.x, y: m.y, z: m.z, vx: dir.x * sp + tr.vx, vy: dir.y * sp, vz: dir.z * sp + tr.vz, g: 9, life: 1.2, r: 0.4, owner: tr, spin: [10, 0, 6],
-              onHit: (v, p) => { v._eggs = (v._eggs || 0) + 1; sys.hit(tr, v, { kind: 'egg', dmg: 1.3, push: [dir.x * 1.5, dir.z * 1.5, 0], blind: v.isPlayer && v._eggs % 6 === 0 ? { kind: 'egg', secs: 1.5, amount: 0.6 } : null, award: v._eggs % 10 === 0 ? 5 : 0 }); sys.after(3, () => { v._eggs = Math.max(0, (v._eggs || 1) - 1); }); },
+              onHit: (v, p) => { v._eggs = (v._eggs || 0) + 1; sys.hit(tr, v, { kind: 'egg', dmg: 1.3, push: [ex * 1.5, ez * 1.5, 0], blind: v.isPlayer && v._eggs % 6 === 0 ? { kind: 'egg', secs: 1.5, amount: 0.6 } : null, award: v._eggs % 10 === 0 ? 5 : 0 }); sys.after(3, () => { v._eggs = Math.max(0, (v._eggs || 1) - 1); }); },
               onEnd: (p) => { if (!sys.near(p.x, p.z)) return; splashAt(sys, p.x, p.y, p.z, 0xffd23f, 4, 3, 0.16); splashAt(sys, p.x, p.y, p.z, 0xfffaf0, 4, 3, 0.18); } });
           }
           gun.position.z *= Math.exp(-dt * 20);
+          if (age > 6.8 && !stowed) { stowed = true; sys.snd('retract', tr.x, tr.z); }
           if (age > 7.25) { tur.removeFromParent(); done(); return false; }
           return true;
         });
@@ -646,7 +716,12 @@ export const MOVES = {
   wraptor: {
     light: { // Tortilla Warfare: for 6 s cooks at both windows frisbee tortillas at anyone close
       bot: anyNear(14),
-      start(sys, tr, done) { throwers(sys, tr, 6, 0.42, 17, () => A.tortilla(), { kind: 'tortilla', dmg: 3, blind: { kind: 'tortilla', secs: 1.8 }, award: 5, label: 'TORTILLA\'D!' }, (p) => { p.spin = [0, 22, 0]; p.flat = true; }, null, done); },
+      start(sys, tr, done) { throwers(sys, tr, 6, 0.42, 17, () => A.tortilla(), { kind: 'tortilla', dmg: 3, blind: { kind: 'tortilla', secs: 1.8 }, award: 5, label: 'TORTILLA\'D!' }, (p) => {
+        // spun flat like a frisbee about its own axis, with a lazy wobble so its round shape shows from any angle
+        const w = 7 + Math.random() * 3, amp = 0.28 + Math.random() * 0.12, ph = Math.random() * 6.28, bank = (Math.random() - 0.5) * 0.3;
+        p.obj.rotation.order = 'XZY'; let spin = Math.random() * 6.28;
+        p.trail = (q, dt2) => { spin += 24 * dt2; q.obj.rotation.set(Math.sin(q.age * w + ph) * amp + bank, spin, Math.cos(q.age * w + ph) * amp); };
+      }, null, done, 22, 'frisbee'); },
     },
     heavy: { // Wraptor Wram: the head drops into a stare, the truck glows red and supercharges until it rams something
       parts: ['head'], bot: nearOrFront(30, 0.25),
@@ -656,14 +731,14 @@ export const MOVES = {
         if (tint) { tint.emissive = new THREE.Color(0xff1a00); bodyMesh.material = tint; }
         let over = false, age = 0;
         const finish = () => { if (over) return; over = true; tr.powerMul = 1; tr._onRam = null; tr._onWall = null; };
-        tr.powerMul = 1.35;
+        tr.powerMul = 1.35; sys.snd('roar', tr.x, tr.z); sys.snd('rev', tr.x, tr.z, 0.8);
         tr._onRam = (v, info) => {
           if (over || !v || v.ko || (v.team && v.team === tr.team)) return;
           const [fx, fz] = fwdOf(tr);
           sys.hit(tr, v, { kind: 'wram', dmg: 46, push: [fx * 30, fz * 30, 8], knock: 'side', award: 45, label: 'WRAPTOR WRAM!' });
           fireball(sys, v.x, v.y + 1.5, v.z, 0.9); sys.shake(v.x, v.z, 1.8); finish();
         };
-        tr._onWall = (s) => { if (s > 0.6 && age > 0.4) { sys.fx.debris(tr.x, 1, tr.z, 10, 0x6d5a45); finish(); } };
+        tr._onWall = (s) => { if (s > 0.6 && age > 0.4) { sys.fx.debris(tr.x, 1, tr.z, 10, 0x6d5a45); sys.snd('crunch', tr.x, tr.z); finish(); } };
         sys.task(() => (dt, t, a) => {
           age = a;
           const stare = smooth(a / 0.3) * (over ? 0 : 1);
@@ -682,26 +757,30 @@ export const MOVES = {
   tsonami: {
     light: { // Take-out Frags: for 6 s the cooks hurl take-out boxes that burst like firecrackers
       bot: anyNear(14),
-      start(sys, tr, done) { throwers(sys, tr, 6, 0.5, 17, () => A.takeoutBox(), { kind: 'frag', dmg: 4, award: 4 }, (p) => { p.spin = [4, 3, 6]; }, (p) => sparkle(sys, p.x, p.y, p.z), done); },
+      start(sys, tr, done) { throwers(sys, tr, 6, 0.5, 17, () => A.takeoutBox(), { kind: 'frag', dmg: 4, award: 4 }, (p) => { p.spin = [4, 3, 6]; }, (p) => sparkle(sys, p.x, p.y, p.z), done, 12); }, // a slower lob, so you can see the boxes coming
     },
     heavy: { // Flaming Dragon: a huge plume of fire from the dragon's mouth sets trucks ahead ablaze for 6 s
       bot: nearOrFront(22, 0.35),
       start(sys, tr, done) {
         const hitSet = new Set();
+        sys.snd('ignite', tr.x, tr.z); const roar = sys.sndLoop('flame', () => tr);
         sys.task(() => (dt, t, age) => {
           const mouth = sys.worldPoint(tr, [0, 2.74, 2.55], _a), dir = sys.worldDir(tr, [0, -0.1, 1], _b).normalize();
           if (sys.near(mouth.x, mouth.z)) {
-            // the plume: orange flame bodies, a hot glowing core near the mouth
-            sys.flame.emit(6, (q) => { const sp = 22 + Math.random() * 10; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 7 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 5; q.vz = dir.z * sp + (Math.random() - 0.5) * 7 + tr.vz; q.g = -4; q.drag = 1.8; q.size = 0.35; q.grow = 3.4; q.life = 0.5 + Math.random() * 0.25; q.alpha = 0.95; q.color = pick([0xff5a14, 0xff7a1f, 0xe8400f, 0xff9a26, 0xd02a0a]); q.spin = 4; });
-            sys.glow.emit(3, (q) => { const sp = 18 + Math.random() * 8; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 4 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 3; q.vz = dir.z * sp + (Math.random() - 0.5) * 4 + tr.vz; q.g = -3; q.drag = 2.5; q.size = 0.25; q.grow = 1.4; q.life = 0.22; q.color = pick(FLAME); q.spin = 6; });
+            // the plume: a roaring jet of flame tongues streaming along the throw, rolling fire bodies around it, a hot core
+            // at the mouth, and soot curling off the end
+            sys.fire.emit(7, (q) => { const sp = 20 + Math.random() * 12, sx = (Math.random() - 0.5), sy = (Math.random() - 0.4); q.x = mouth.x + dir.x * 0.3; q.y = mouth.y; q.z = mouth.z + dir.z * 0.3; q.vx = dir.x * sp + sx * 7 + tr.vx; q.vy = dir.y * sp + sy * 5; q.vz = dir.z * sp + (Math.random() - 0.5) * 7 + tr.vz; q.g = -5; q.drag = 1.7; q.size = 0.35; q.grow = 2.2; q.stretch = 2.6 - Math.random() * 0.8; q.life = 0.45 + Math.random() * 0.25; q.alpha = 0.95; });
+            if (Math.random() < 0.6) sys.flame.emit(1, (q) => { const sp = 16 + Math.random() * 8; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 6 + tr.vx; q.vy = dir.y * sp + Math.random() * 3; q.vz = dir.z * sp + (Math.random() - 0.5) * 6 + tr.vz; q.g = -4; q.drag = 1.8; q.size = 0.4; q.grow = 2.6; q.life = 0.55; q.alpha = 0.75; q.color = pick([0xe0521a, 0xc9420e, 0xff7a1f]); q.spin = 3; });
+            sys.glow.emit(2, (q) => { const sp = 14 + Math.random() * 6; q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 3 + tr.vx; q.vy = dir.y * sp + (Math.random() - 0.4) * 2; q.vz = dir.z * sp + (Math.random() - 0.5) * 3 + tr.vz; q.g = -3; q.drag = 2.5; q.size = 0.2; q.grow = 1.2; q.life = 0.16; q.color = pick([0xffd060, 0xffb02a]); q.spin = 6; });
+            if (Math.random() < 0.4) sys.glow.emit(1, (q) => { q.x = mouth.x; q.y = mouth.y; q.z = mouth.z; q.vx = dir.x * 24 + (Math.random() - 0.5) * 10; q.vy = 2 + Math.random() * 4; q.vz = dir.z * 24 + (Math.random() - 0.5) * 10; q.g = 6; q.drag = 1; q.size = 0.06; q.life = 0.9; q.color = 0xffc23a; });
           }
-          if (sys.near(mouth.x, mouth.z) && Math.random() < 0.5) softSmoke(sys, mouth.x + dir.x * 14, mouth.y + 2, mouth.z + dir.z * 14, 1, 0x3a3633, 1.1, 3);
+          if (sys.near(mouth.x, mouth.z) && Math.random() < 0.45) sys.smoke.emit(1, (q) => { q.x = mouth.x + dir.x * (13 + Math.random() * 4); q.y = mouth.y + 1.5; q.z = mouth.z + dir.z * (13 + Math.random() * 4); q.vx = dir.x * 4 + tr.vx * 0.5; q.vz = dir.z * 4 + tr.vz * 0.5; q.vy = 3; q.g = 0; q.drag = 1; q.size = 1.2; q.grow = 1.8; q.life = 1.4; q.alpha = 0.6; q.color = 0x3a3633; });
           for (const v of sys.enemies(tr)) {
             if (hitSet.has(v)) continue;
             const dx = v.x - mouth.x, dz = v.z - mouth.z, d = Math.hypot(dx, dz);
             if (d < 24 && Math.abs(((Math.atan2(dx, dz) - Math.atan2(dir.x, dir.z) + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.33 + 1.5 / Math.max(2, d)) { hitSet.add(v); sys.hit(tr, v, { kind: 'dragon', dmg: 20, burn: 6, push: [dir.x * 8, dir.z * 8, 1], award: 30, label: 'DRAGON FIRE!' }); }
           }
-          if (age > 2.2) { done(); return false; }
+          if (age > 2.2) { roar.stop(); done(); return false; }
           return true;
         });
       },
@@ -714,8 +793,13 @@ export const MOVES = {
       bot: anyBehind(14),
       start(sys, tr, done) {
         const x = tr.x, z = tr.z, R = 13;
+        sys.snd('hiss', x, z); const pour = sys.sndLoop('smoke', () => ({ x, z })); sys.after(4.5, () => pour.stop());
         sys.addHazard({ x, z, r: R, life: 6.5, owner: tr, every: 0.6, ownerSafe: true,
-          update: (dt, t, h) => { const r = R * smooth(h.age / 1.2); h.r = Math.max(1, r); if (sys.near(x, z) && h.age < 5.5) sys.soft.emit(h.age < 1.2 ? 8 : 3, (q) => { const a = Math.random() * 6.28, rr = Math.random() * r; q.x = x + Math.cos(a) * rr; q.y = 0.4 + Math.random() * Math.min(4, 1 + h.age * 2); q.z = z + Math.sin(a) * rr; q.vx = Math.cos(a) * 1.5; q.vz = Math.sin(a) * 1.5; q.vy = 0.5; q.g = 0; q.drag = 1; q.size = 1.4; q.grow = 1.6; q.life = 2.0; q.alpha = 0.75; q.color = pick([0x4a4744, 0x5c5854, 0x6d6862, 0x7a6a5a]); }); },
+          update: (dt, t, h) => { const r = R * smooth(h.age / 1.2); h.r = Math.max(1, r); if (sys.near(x, z) && h.age < 5.5) {
+            // great rolling billows that well up from under the truck, roll outward and pile up
+            if (Math.random() < (h.age < 1.2 ? 1 : 0.3)) sys.smoke.emit(1, (q) => { const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * r * 0.85; q.x = x + Math.cos(a) * rr; q.y = 0.8 + Math.random() * Math.min(3, 0.5 + h.age * 1.5); q.z = z + Math.sin(a) * rr; q.vx = Math.cos(a) * 1.8; q.vz = Math.sin(a) * 1.8; q.vy = 0.5 + Math.random() * 0.6; q.g = 0; q.drag = 0.7; q.size = 2.4 + Math.random() * 1.2; q.grow = 1.1; q.life = 2.6 + Math.random() * 0.8; q.alpha = 0.82; q.spin = (Math.random() - 0.5) * 0.8; q.color = pick([0x5a5450, 0x6b635c, 0x7a6e62, 0x4c4743]); });
+            if (h.age < 1.0) sys.smoke.emit(1, (q) => { const a = Math.random() * 6.28; q.x = x + Math.cos(a) * 1.2; q.y = 0.6; q.z = z + Math.sin(a) * 1.2; q.vx = Math.cos(a) * 9; q.vz = Math.sin(a) * 9; q.vy = 1; q.g = 0; q.drag = 1.8; q.size = 1.6; q.grow = 1.6; q.life = 2.0; q.alpha = 0.85; q.spin = 0.5; q.color = 0x5c5854; });
+          } },
           onEnter: (v) => sys.hit(tr, v, { kind: 'smoke', blind: { kind: 'smoke', secs: 1.3, amount: 0.8 }, slow: 1.2, award: 2 }) });
         done();
       },
@@ -724,10 +808,11 @@ export const MOVES = {
       bot: nearOrFront(20, 0.35),
       start(sys, tr, done) {
         const hitSet = new Set();
+        sys.snd('hiss', tr.x, tr.z); sys.snd('roar', tr.x, tr.z, 0.6); const blast = sys.sndLoop('smoke', () => tr, 1.4);
         sys.task(() => (dt, t, age) => {
           const nose = sys.worldPoint(tr, [0, 1.86, 2.55], _a), dir = sys.worldDir(tr, [0, -0.05, 1], _b).normalize();
           if (sys.near(nose.x, nose.z)) {
-            sys.soft.emit(9, (q) => { const sp = 20 + Math.random() * 8; q.x = nose.x; q.y = nose.y; q.z = nose.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 6 + tr.vx; q.vy = (Math.random() - 0.3) * 4; q.vz = dir.z * sp + (Math.random() - 0.5) * 6 + tr.vz; q.g = -1; q.drag = 1.6; q.size = 0.5; q.grow = 2.4; q.life = 0.9; q.color = pick([0x2e2a27, 0x433d38, 0x5a524b]); q.spin = 2; });
+            sys.smoke.emit(3, (q) => { const sp = 18 + Math.random() * 9; q.x = nose.x; q.y = nose.y; q.z = nose.z; q.vx = dir.x * sp + (Math.random() - 0.5) * 5 + tr.vx; q.vy = (Math.random() - 0.2) * 3; q.vz = dir.z * sp + (Math.random() - 0.5) * 5 + tr.vz; q.g = -1.2; q.drag = 1.5; q.size = 0.7; q.grow = 3.0; q.life = 1.3 + Math.random() * 0.4; q.alpha = 0.9; q.spin = (Math.random() - 0.5) * 1.5; q.color = pick([0x2e2a27, 0x433d38, 0x5a524b, 0x3a3430]); });
             sys.glow.emit(2, (q) => { q.x = nose.x; q.y = nose.y; q.z = nose.z; q.vx = dir.x * 20 + (Math.random() - 0.5) * 8; q.vy = Math.random() * 4; q.vz = dir.z * 20 + (Math.random() - 0.5) * 8; q.g = 4; q.size = 0.08; q.life = 0.5; q.color = pick([0xff7a1f, 0xffb02a]); });
           }
           for (const v of sys.enemies(tr)) {
@@ -735,7 +820,7 @@ export const MOVES = {
             const dx = v.x - nose.x, dz = v.z - nose.z, d = Math.hypot(dx, dz);
             if (d < 19 && Math.abs(((Math.atan2(dx, dz) - Math.atan2(dir.x, dir.z) + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.3 + 1.6 / Math.max(2, d)) { hitSet.add(v); sys.hit(tr, v, { kind: 'burnt', dmg: 20, blind: { kind: 'smoke', secs: 2, amount: 1.2 }, push: [dir.x * 26, dir.z * 26, 5], knock: 'side', award: 30, label: 'BURNT ENDS!' }); }
           }
-          if (age > 1.3) { done(); return false; }
+          if (age > 1.3) { blast.stop(); done(); return false; }
           return true;
         });
       },
@@ -748,6 +833,7 @@ export const MOVES = {
       bot: anyNear(16),
       start(sys, tr, done) {
         const body = tr.mesh.userData.body, tap = A.kegTap(); tap.position.set(0.62, 1.1, 2.55); body.add(tap);
+        sys.snd('deploy', tr.x, tr.z, 0.7); sys.after(0.2, () => { sys.snd('pour', tr.x, tr.z); sys.snd('fizz', tr.x, tr.z); });
         const target = sys.nearest(tr, 20);
         let hit = false;
         sys.task(() => (dt, t, age) => {
@@ -786,9 +872,10 @@ export const MOVES = {
             const [tx, tz] = lead(target, T);
             const [vx, vy, vz] = lob(hand.x, hand.y, hand.z, tx, target.y + 1.8, tz, T, 16);
             const kind = Math.random() < 0.6 ? Math.floor(Math.random() * 2) : 2;
+            sys.snd('throw', hand.x, hand.z, 0.7);
             sys.addProjectile({ obj: A.bottle(kind), x: hand.x, y: hand.y, z: hand.z, vx, vy, vz, g: 16, life: T + 0.8, r: 0.6, owner: tr, spin: [12, 4, 8],
               onHit: (v) => sys.hit(tr, v, { kind: 'bottle', dmg: 3, award: 3, label: 'BAR FIGHT!' }),
-              onEnd: (q) => { if (!sys.near(q.x, q.z)) return; sys.glow.emit(8, (e) => { const a = Math.random() * 6.28, s = 3 + Math.random() * 5; e.x = q.x; e.y = q.y; e.z = q.z; e.vx = Math.cos(a) * s; e.vz = Math.sin(a) * s; e.vy = 2 + Math.random() * 4; e.g = 14; e.size = 0.07; e.life = 0.5; e.color = pick([0xcff3ff, 0xffffff, 0x9fe0a8]); }); splashAt(sys, q.x, q.y, q.z, kind === 1 ? 0x8a1a2a : 0xffb21f, 8, 3, 0.2); } });
+              onEnd: (q) => { sys.snd('glass', q.x, q.z, 0.8); if (!sys.near(q.x, q.z)) return; sys.glow.emit(8, (e) => { const a = Math.random() * 6.28, s = 3 + Math.random() * 5; e.x = q.x; e.y = q.y; e.z = q.z; e.vx = Math.cos(a) * s; e.vz = Math.sin(a) * s; e.vy = 2 + Math.random() * 4; e.g = 14; e.size = 0.07; e.life = 0.5; e.color = pick([0xcff3ff, 0xffffff, 0x9fe0a8]); }); splashAt(sys, q.x, q.y, q.z, kind === 1 ? 0x8a1a2a : 0xffb21f, 8, 3, 0.2); } });
           });
           if (age > 10.4) { for (const p of people) { p.calm.visible = true; p.panic.visible = false; } done(); return false; }
           return true;
@@ -804,9 +891,10 @@ function BUTTER_STRIP() { if (!_strip) { _strip = new THREE.PlaneGeometry(1.5, 1
 
 /**
  * Cooks at both side windows throw things at anyone within range for `secs`: make() builds the projectile mesh,
- * o is the hit, setup(p) tweaks the projectile, onBurst(p) runs where it lands.
+ * o is the hit, setup(p) tweaks the projectile, onBurst(p) runs where it lands; speed is the throw's ground speed (m/s)
+ * and throwSnd the sound of each throw.
  */
-function throwers(sys, tr, secs, every, range, make, o, setup, onBurst, done) {
+function throwers(sys, tr, secs, every, range, make, o, setup, onBurst, done, speed = 22, throwSnd = 'throw') {
   const sides = ['left', 'right'].map((s) => ({ s, c: crew(sys, tr, s, null, 1), next: Math.random() * 0.3 }));
   sys.task(() => (dt, t, age) => {
     for (const side of sides) {
@@ -818,12 +906,12 @@ function throwers(sys, tr, secs, every, range, make, o, setup, onBurst, done) {
       if (!target) continue;
       side.next = every * (0.8 + Math.random() * 0.4);
       armsUp(c.cooks[0], true); side.throwT = 0.25;
-      const hand = sys.worldPoint(tr, [c.out.p[0] + Math.sign(c.out.p[0]) * 0.4, 2.4, c.out.p[2]], _a), T = Math.max(0.35, sys.dist(tr, target) / 22);
+      const hand = sys.worldPoint(tr, [c.out.p[0] + Math.sign(c.out.p[0]) * 0.4, 2.4, c.out.p[2]], _a), T = Math.max(0.35, sys.dist(tr, target) / speed);
       const [tx, tz] = lead(target, T);
       const [vx, vy, vz] = lob(hand.x, hand.y, hand.z, tx, target.y + 2, tz, T, 10);
       const p = { obj: make(), x: hand.x, y: hand.y, z: hand.z, vx, vy, vz, g: 10, life: T + 0.8, r: 0.7, owner: tr,
         onHit: (v) => sys.hit(tr, v, o), onEnd: (q) => onBurst?.(q) };
-      setup?.(p); sys.addProjectile(p);
+      setup?.(p); sys.addProjectile(p); sys.snd(throwSnd, hand.x, hand.z, 0.75);
     }
     if (age > secs + 0.3) { for (const side of sides) side.c.g.removeFromParent(); done(); return false; }
     return true;

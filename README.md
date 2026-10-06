@@ -42,6 +42,8 @@ Every truck has a light special (9–12 s recharge) and a heavy one (22–25 s r
 - `src/vehicles/specials/system.js`: projectiles, hazards (puddles, clouds, obstacles), burning, and the bots' choice of when to fire.
 - `src/vehicles/specials/assets.js`: the props (cooks, vats, cacti, drone kit, cheese cannon, egg turret, ...).
 - `src/ui/splats.js`: windscreen splats when the player is hit.
+- `src/core/sfx.js`: the moves' sound effects, synthesised in WebAudio (servos, pours, launches, explosions, gunfire, gas, glass, lasers, flame), panned and faded by distance from the camera.
+- `src/fx/particles.js`: instanced particles; soft billboard puffs for smoke and clouds, and flame tongues stretched along their motion for fire.
 
 Every hit goes through the mode's `onSpecialHit`, so the rolled result always stands. In Rumble a knock-over move only flips a truck that is due to go out; anyone else tumbles and lands on their wheels, and HP floors keep them alive.
 

@@ -104,7 +104,7 @@ export class Game {
     for (const tr of this.trucks) tr.applyRender(alpha);
     this.mode.applyRender?.(alpha);
     this.updateCamera(dt);
-    this.specials.soft.update(0, this.camera); this.specials.flame.update(0, this.camera); // turn the billboards to this frame's camera
+    this.specials.face(this.camera); // turn the billboards to this frame's camera
     this.hud.update(this, dt);
     if (this.mode.finished) {
       this.mode.endTimer -= dt;
@@ -281,7 +281,7 @@ export class Game {
   render() { this.props.cull(this.camera); this.renderer.render(this.scene, this.camera); }
 
   dispose() {
-    this.audio.stopEngine(); this.audio.stopMusic();
+    this.audio.stopEngine(); this.audio.stopMusic(); this.specials.dispose(); // (stops any special's sustained sounds)
     this.hud.hide();
     // shared = truck model library; keepGeometry = cached prop models; keepTextures = city textures painted once per session
     this.scene.traverse((o) => {

@@ -4,21 +4,51 @@
 // rolled result says survives).
 import * as THREE from 'three';
 import { Particles } from '../../fx/particles.js';
+import { Sfx } from '../../core/sfx.js';
 import { angleDiff, clamp } from '../../core/math.js';
 import { MOVES } from './moves.js';
 
 const _v = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+// the sound each kind of hit makes on its victim (explosions, lasers and fire bring their own)
+const HIT_SFX = {
+  grease: 'splat', oil: 'sizzle', glizzy: 'smack', cheese: 'splat', whiz: 'splat', cactus: 'crunch', roll: 'smack', net: 'wrap',
+  soup: 'splash', churro: 'smack', frost: 'freeze', tzatziki: 'splat', butter: 'splat', egg: 'crack', tortilla: 'thwap', wram: 'smack',
+  dragon: 'ignite', burnt: 'thwap', beer: 'splash', bottle: 'glass', smash: 'thwap', smoke: null, missile: 'smack', grenade: 'smack', drone: 'smack',
+};
 
 export class SpecialSystem {
   constructor(game) {
     this.game = game; this.scene = game.scene; this.fx = game.fx; this.audio = game.audio; this.world = game.world;
     this.glow = new Particles(game.scene, { additive: true, max: 900 });
     this.soft = new Particles(game.scene, { soft: true, max: 1200 }); // clouds: smoke, frost, sugar, dust
-    this.flame = new Particles(game.scene, { soft: true, unlit: true, max: 600 }); // flame bodies
+    this.flame = new Particles(game.scene, { soft: true, unlit: true, max: 600 }); // fireball bodies
+    this.fire = new Particles(game.scene, { flame: true, max: 700 }); // tongues of flame (burning trucks, the dragon's plume)
+    this.smoke = new Particles(game.scene, { soft: true, texture: 'billow', max: 360 }); // big rolling smoke
     this.group = new THREE.Group(); game.scene.add(this.group);
     this.tasks = []; this.projectiles = []; this.hazards = []; this.burns = []; this.time = 0;
+    this.sfx = new Sfx(game.audio); this.loops = [];
   }
-  dispose() { this.scene.remove(this.group); }
+  get billboards() { return [this.soft, this.flame, this.fire, this.smoke]; }
+  /** turn the billboards to face this frame's camera (after it has moved) */
+  face(camera) { for (const ps of this.billboards) ps.update(0, camera); }
+  dispose() { this.scene.remove(this.group); for (const l of this.loops) l.h.stop(); this.loops = []; }
+
+  // ------------------------------------------------------------------ sound
+  /** loudness and stereo position of a sound at (x, z) for the current camera */
+  hear(x, z, vol = 1) {
+    const c = this.game.camera, dx = x - c.position.x, dz = z - c.position.z, d = Math.hypot(dx, dz);
+    const k = Math.max(0, 1 - Math.max(0, d - 12) / 85);
+    _v.setFromMatrixColumn(c.matrixWorld, 0);
+    return [vol * k * k, d > 1 ? (dx * _v.x + dz * _v.z) / d * 0.75 : 0];
+  }
+  /** play a one-shot sound effect at a spot in the world */
+  snd(name, x, z, vol = 1) { if (this.game.audio?.ctx) { const [v, pan] = this.hear(x, z, vol); this.sfx.play(name, v, pan); } }
+  /** a sustained sound that follows src() ({x, z}) until stop() */
+  sndLoop(name, src, vol = 1) {
+    const p = src(), [v, pan] = this.hear(p.x, p.z, vol), h = this.sfx.loop(name, v, pan), l = { h, src, vol };
+    this.loops.push(l);
+    return { stop: () => { h.stop(); const i = this.loops.indexOf(l); if (i >= 0) this.loops.splice(i, 1); } };
+  }
 
   // ------------------------------------------------------------------ queries
   get trucks() { return this.game.trucks; }
@@ -113,6 +143,7 @@ export class SpecialSystem {
     }
     if (vic.shielded) knock = false;
     if (o.push) { const d = Math.hypot(o.push[0], o.push[1]) || 1; vic.kick(o.push[0] / d, o.push[1] / d, Math.min(25, d)); }
+    const sfx = HIT_SFX[o.kind]; if (sfx) this.snd(sfx, vic.x, vic.z, vic.isPlayer ? 1 : 0.85);
     vic.lastHitBy = att; vic.lastHitTime = mode.elapsed ?? g.time;
     mode.onSpecialHit(att, vic, o.kind || 'special', (o.dmg || 0) / 10, { dmg: o.dmg || 0, knock, award: o.award, label: o.label, dir: o.push });
   }
@@ -163,8 +194,19 @@ export class SpecialSystem {
     for (let i = this.burns.length - 1; i >= 0; i--) {
       const b = this.burns[i], v = b.vic;
       if (!v.alive || v.ko || this.time > b.until) { this.burns.splice(i, 1); continue; }
-      b.tick -= dt; if (b.tick <= 0) { b.tick = 0.5; this.game.mode.onSpecialHit(b.att, v, 'burn', 0.25, { dmg: 2.5, award: 0 }); }
-      if (this.near(v.x, v.z)) this.glow.emit(2, (q) => { q.x = v.x + (Math.random() - 0.5) * 2; q.y = v.y + 1.5 + Math.random() * 1.5; q.z = v.z + (Math.random() - 0.5) * 3.5; q.vx = v.vx * 0.8; q.vz = v.vz * 0.8; q.vy = 3 + Math.random() * 2; q.g = -2; q.size = 0.3; q.grow = 0.8; q.life = 0.45; q.color = [0xff4d1f, 0xff8a1f, 0xffc23a][Math.floor(Math.random() * 3)]; });
+      b.tick -= dt; if (b.tick <= 0) { b.tick = 0.5; this.game.mode.onSpecialHit(b.att, v, 'burn', 0.25, { dmg: 2.5, award: 0 }); this.snd('crackle', v.x, v.z, 0.7); }
+      if (this.near(v.x, v.z)) {
+        // licking tongues of flame off the roof and flanks, embers, and a column of sooty smoke
+        const c = Math.cos(v.heading), sn = Math.sin(v.heading);
+        this.fire.emit(3, (q) => {
+          const lx = (Math.random() - 0.5) * 2.0, lz = (Math.random() - 0.5) * 4.4, top = Math.random() < 0.65;
+          q.x = v.x + lx * c + lz * sn; q.z = v.z - lx * sn + lz * c; q.y = v.y + (top ? 2.7 + Math.random() * 0.4 : 1.0 + Math.random() * 1.4);
+          q.vx = v.vx * 0.85 + (Math.random() - 0.5) * 1.2; q.vz = v.vz * 0.85 + (Math.random() - 0.5) * 1.2; q.vy = 2.5 + Math.random() * 2.5;
+          q.g = -6; q.drag = 0.6; q.size = top ? 0.55 + Math.random() * 0.35 : 0.4 + Math.random() * 0.2; q.grow = -0.25; q.stretch = 1.6 + Math.random() * 0.8; q.life = 0.4 + Math.random() * 0.3; q.alpha = 0.95;
+        });
+        if (Math.random() < 0.5) this.glow.emit(1, (q) => { q.x = v.x + (Math.random() - 0.5) * 2; q.y = v.y + 2.8; q.z = v.z + (Math.random() - 0.5) * 3.5; q.vx = v.vx * 0.8 + (Math.random() - 0.5) * 2; q.vz = v.vz * 0.8 + (Math.random() - 0.5) * 2; q.vy = 4 + Math.random() * 3; q.g = 1; q.size = 0.06; q.life = 0.8; q.color = 0xffb02a; });
+        if (Math.random() < 0.25) this.smoke.emit(1, (q) => { q.x = v.x + (Math.random() - 0.5); q.y = v.y + 4; q.z = v.z + (Math.random() - 0.5); q.vx = v.vx * 0.5; q.vz = v.vz * 0.5; q.vy = 2.5; q.g = 0; q.drag = 0.8; q.size = 1.0; q.grow = 1.4; q.life = 1.6; q.alpha = 0.55; q.color = 0x3a3633; });
+      }
     }
     // projectiles
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -225,7 +267,7 @@ export class SpecialSystem {
       if (h.dead || h.age >= h.life) { h.onEnd?.(h); if (h.obj && !h.keep) h.obj.removeFromParent(); this.hazards.splice(i, 1); }
     }
     this.glow.update(dt);
-    this.soft.update(dt, this.game.camera);
-    this.flame.update(dt, this.game.camera);
+    for (const ps of this.billboards) ps.update(dt, this.game.camera);
+    for (const l of this.loops) { const p = l.src(); const [v, pan] = this.hear(p.x, p.z, l.vol); l.h.set(v, pan); }
   }
 }

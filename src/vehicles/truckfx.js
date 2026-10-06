@@ -33,7 +33,7 @@ export const TRUCK_PARTS = {
   bratzilla: { sausage: { mode: 'islands', box: [-0.45, 2.55, -2.45, 0.45, 3.7, 2.45] } },
   fryclone: { fry: { mode: 'each', box: [-0.95, 1.7, -2.0, 0.95, 4.6, 1.1], minSize: [0, 1.0, 0], maxSize: [0.75, 9, 1.4] } },
   macattack: { mac: { mode: 'islands', box: [-0.95, 2.25, -2.0, 0.95, 3.9, 1.7] } },
-  burrito: { burrito: { mode: 'islands', box: [-0.85, 1.85, -2.0, 0.9, 3.15, 1.7], minSize: [0.6, 0, 0], pivot: [0, 2.55, -0.15] } },
+  burrito: { burrito: { mode: 'islands', box: [-0.85, 1.85, -2.0, 0.9, 3.15, 1.7], pivot: [0, 2.55, -0.15] } }, // wrap and every strand of filling
   churricane: { churros: { mode: 'islands', box: [-0.65, 2.2, -2.6, 0.65, 3.25, 2.2], pivot: [0, 2.45, -2.45] } },
   hoagie: { sandwich: { mode: 'islands', box: [-0.9, 2.15, -2.35, 0.9, 3.6, 1.75], pivot: [0, 2.2, -0.3] } },
   gyro: { gyro: { mode: 'islands', box: [-0.85, 2.05, -1.9, 0.85, 3.5, 1.4] } },
