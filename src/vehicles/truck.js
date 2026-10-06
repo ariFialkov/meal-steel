@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { clamp, wrapAngle, damp } from '../core/math.js';
 import { obbVsObb } from '../world/colliders.js';
 import { getTruckModel } from './models.js';
+import { iceShell, noodleNet, cheeseGoo } from './specials/assets.js';
 
 const labelCache = new Map();
 function makeLabel(def) {
@@ -100,8 +101,8 @@ export function buildTruckMesh(def) {
   } else wheels = buildProceduralBody(def, body, chassis);
   const parts = model ? model.parts : {};
   // status visuals
-  const ice = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.8, 6.2), new THREE.MeshLambertMaterial({ color: 0x9ad4ff, transparent: true, opacity: 0.55 })); ice.position.y = 1.9; ice.visible = false; root.add(ice);
-  const net = new THREE.Mesh(new THREE.SphereGeometry(3.6, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe9a8, wireframe: true })); net.position.y = 1.8; net.visible = false; root.add(net);
+  const ice = iceShell(); ice.visible = false; root.add(ice);
+  const net = noodleNet(true); net.visible = false; root.add(net);
   const shield = new THREE.Mesh(new THREE.SphereGeometry(3.8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.25 })); shield.position.y = 1.8; shield.visible = false; root.add(shield);
   root.userData = { chassis, body, wheels, parts, ice, net, shield };
   return root;
@@ -124,9 +125,11 @@ export class Truck {
     this.turnRate = 1.7 + s.handling * 0.28;
     this.mass = 1 + s.weight * 0.3;
     this.turboTime = 0; this.turboCd = 0; this.turboCdMax = 7;
-    this.spCd = 0; this.spCdMax = def.special.cooldown;
-    this.fx = { spin: 0, slick: 0, freeze: 0, drunk: 0, slow: 0, snare: 0, stun: 0, air: 0, burn: 0, blind: 0, ram: 0 };
-    this.control = { steer: 0, throttle: 0, brake: false, handbrake: false, turbo: false, special: false };
+    // two special moves, each on its own cooldown (light: quick and cheap, heavy: big and slow to recharge)
+    this.cd = { light: 0, heavy: 0 }; this.cdMax = { light: def.light.cooldown, heavy: def.heavy.cooldown };
+    this.powerMul = 1; // a move may supercharge the truck for a while
+    this.fx = { spin: 0, slick: 0, freeze: 0, drunk: 0, slow: 0, snare: 0, stun: 0, air: 0, burn: 0, blind: 0, ram: 0, gum: 0 };
+    this.control = { steer: 0, throttle: 0, brake: false, handbrake: false, turbo: false, special: null };
     this.drifting = false; this.speed = 0; this.fwdSpeed = 0; this.lastImpact = 0; this.airborne = false; this.onOverpass = false;
     this.score = 0; this.alive = true; this.visible = true;
     this.lastHitBy = null; this.lastHitTime = -99;
@@ -179,7 +182,7 @@ export class Truck {
     const c = this.control, fx = this.fx;
     for (const k in fx) if (fx[k] > 0) fx[k] = Math.max(0, fx[k] - dt);
     if (this.turboTime > 0) this.turboTime -= dt; else if (this.turboCd > 0) this.turboCd = Math.max(0, this.turboCd - dt);
-    if (this.spCd > 0) this.spCd = Math.max(0, this.spCd - dt);
+    for (const k of ['light', 'heavy']) if (this.cd[k] > 0) this.cd[k] = Math.max(0, this.cd[k] - dt);
 
     const disabled = this.disabled();
     let steer = disabled ? 0 : clamp(c.steer, -1, 1);
@@ -199,11 +202,12 @@ export class Truck {
 
     const fX = Math.sin(this.heading), fZ = Math.cos(this.heading), rX = Math.cos(this.heading), rZ = -Math.sin(this.heading);
     let fs = this.vx * fX + this.vz * fZ, ls = this.vx * rX + this.vz * rZ;
-    const maxSp = this.maxSpeed * (turbo ? 1.4 : 1) * (fx.slow > 0 || fx.burn > 0 ? 0.6 : 1) * (fx.ram > 0 ? 1.25 : 1) * (fx.blind > 0 ? 0.8 : 1);
+    // (gum: molten cheese round the axles, the truck crawls)
+    const maxSp = this.maxSpeed * this.powerMul * (turbo ? 1.4 : 1) * (fx.slow > 0 || fx.burn > 0 ? 0.6 : 1) * (fx.ram > 0 ? 1.25 : 1) * (fx.blind > 0 ? 0.8 : 1) * (fx.gum > 0 ? 0.3 : 1);
 
     if (!this.airborne) {
       // longitudinal
-      if (throttle > 0.05) { if (fs < maxSp) fs += this.accel * throttle * (turbo ? 1.8 : 1) * dt; }
+      if (throttle > 0.05) { if (fs < maxSp) fs += this.accel * throttle * (turbo ? 1.8 : 1) * (this.powerMul > 1 ? 1.6 : 1) * dt; }
       else if (throttle < -0.05) { if (fs > 0.5) fs -= 24 * dt; else fs = Math.max(fs - 7 * dt, -maxSp * 0.35); }
       // drag
       fs *= Math.exp(-(0.25 + (throttle === 0 ? 0.6 : 0)) * dt);
@@ -404,7 +408,10 @@ export class Truck {
     this.steerVis = damp(this.steerVis, this.control.steer * 0.5 * (1 - clamp(this.speed / 60, 0, 0.5)), 10, dt);
     for (const w of ud.wheels) { w.pivot.rotation.y = w.front ? this.steerVis : 0; w.spin.rotation.x = this.wheelDist / w.r; }
     ud.ice.visible = this.fx.freeze > 0; ud.net.visible = this.fx.snare > 0; ud.shield.visible = this.fx.ram > 0;
-    if (ud.net.visible) ud.net.rotation.y = t * 2;
+    if (ud.net.visible) ud.net.scale.setScalar(1 + Math.sin(t * 9) * 0.02);
+    // molten cheese round the axles while gummed up
+    if (this.fx.gum > 0 && !ud.goo) { ud.goo = cheeseGoo(ud.wheels.map((w) => w.pivot.position)); ud.chassis?.add(ud.goo); }
+    if (ud.goo) { ud.goo.visible = this.fx.gum > 0; if (ud.goo.visible) ud.goo.children.forEach((g, i) => g.scale.set(1, 1 + Math.sin(t * 6 + i) * 0.12, 1)); }
   }
 }
 

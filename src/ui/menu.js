@@ -79,7 +79,7 @@ export class Menu {
     this.truckIdx = ((i % TRUCKS.length) + TRUCKS.length) % TRUCKS.length; localStorage.setItem('ms.truckId', this.truck.id);
     if (this.truckMesh) this.scene.remove(this.truckMesh);
     this.truckMesh = buildTruckMesh(this.truck); this.truckMesh.rotation.y = 0.55;
-    this.truckFx = createTruckFx(null, this.truckMesh, this.truck.id); // idle animations (fries turn, jaw snaps, bar regulars)
+    this.truckFx = createTruckFx(null, this.truckMesh, this.truck.id); // idle animations (fries jiggle, jaw snaps, bar regulars)
     this.scene.add(this.truckMesh); this.refresh();
     if (pop) this.popT = 0.35;
     loadTruckModel(this.truck.id);
@@ -89,7 +89,8 @@ export class Menu {
     const t = this.truck, $ = (id) => document.getElementById(id);
     $('truckName').textContent = t.name; $('truckFood').textContent = t.food;
     $('truckStats').innerHTML = ['speed', 'accel', 'handling', 'weight'].map((k) => `<div class="stat">${k.toUpperCase()}<div class="pips">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= t.stats[k] ? 'on' : ''}"></i>`).join('')}</div></div>`).join('');
-    $('specialIconMenu').innerHTML = icon(t.special.icon); $('specialName').textContent = t.special.name; $('specialDesc').textContent = t.special.desc;
+    $('specialIconMenu').innerHTML = icon(t.light.icon); $('specialName').textContent = t.light.name; $('specialDesc').textContent = t.light.desc;
+    $('heavyIconMenu').innerHTML = icon(t.heavy.icon); $('heavyName').textContent = t.heavy.name; $('heavyDesc').textContent = t.heavy.desc;
     for (const b of document.querySelectorAll('#modes .mode')) b.classList.toggle('selected', b.dataset.mode === this.modeId);
     for (const b of document.querySelectorAll('#bets button')) { const v = parseInt(b.dataset.bet, 10); b.classList.toggle('selected', v === this.bet); b.disabled = v > this.bank; }
     if (this.bet > this.bank) { const ok = BETS.filter((v) => v <= this.bank); if (ok.length) this.bet = ok[ok.length - 1]; }

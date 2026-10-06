@@ -179,7 +179,30 @@ export class RumbleMode extends Mode {
     else { const big = s > 11; this.award(att, big ? 25 : Math.round(5 + s), big ? 'BIG HIT' : 'HIT', big ? 'gold' : 'good'); }
     if (vic.isPlayer && base > 14) this.game.hud.toast(`-${Math.round(base)} HP`, 'bad');
   }
-  onSpecialHit(att, vic, kind, strength) { if (this.finished) return; this.damage(vic, 10 * strength, att); this.award(att, 20, 'SPECIAL HIT', 'gold'); }
+  /**
+   * Special hits: damage under the knockout rules. A knock (a big side-on blow) rolls the truck over: it stays down
+   * (knocked out) only if this truck is slated to go now; otherwise it rolls right back onto its wheels.
+   */
+  onSpecialHit(att, vic, kind, strength, opts = {}) {
+    if (this.finished || vic.ko) return;
+    // a knock-over move flips any truck the result already has going out; everyone else just tumbles and lands on
+    // their wheels (a move can never knock out a truck that's meant to go further)
+    const dmg = opts.dmg ?? 10 * strength;
+    if (opts.knock && this.vulnerable(vic)) {
+      this.damage(vic, dmg, att, 'flip');
+      if (!vic.ko) { vic.hp = 0; this.knockout(vic, att, 'flip'); }
+    } else {
+      this.damage(vic, dmg, att);
+      if (opts.knock && !vic.ko) { vic.tumble(Math.random() < 0.5 ? -1 : 1, false); vic.impulse(0, 0, 6 * vic.mass); }
+    }
+    // points: a fixed bonus per move hit (multi-hit moves pass small amounts), not more than once a second per pair
+    const award = opts.award ?? 20;
+    if (award > 0 && att && !att.ko) {
+      const key = '_spAward' + vic.id;
+      if (!(att[key] > this.elapsed)) { att[key] = this.elapsed + 1; this.award(att, award, opts.label || 'SPECIAL HIT', 'gold'); }
+    }
+    if (vic.isPlayer && dmg >= 15) this.game.hud.toast(`-${Math.round(dmg)} HP`, 'bad');
+  }
   onWallHit(tr, strength) { this.damage(tr, Math.max(0, strength - 0.8) * 9, tr.lastHitBy && this.elapsed - tr.lastHitTime < 2 ? tr.lastHitBy : null); }
   onPropHit(tr, prop, how, strength) {
     if (this.finished) return;
@@ -300,7 +323,7 @@ export class RumbleMode extends Mode {
         tx = this.ring.x + Math.cos(a) * r; tz = this.ring.z + Math.sin(a) * r; sf = 0.7;
       }
       drv.drive(tx, tz, sf, dt, t, { world: g.world, avoidTrucks: aggressive ? null : this.trucks, aggressive, turbo });
-      if (g.specials.botWants(b, this.trucks.filter((v) => !v.ko), dt, b.hunger > 1 ? 1.5 : 0.4)) b.control.special = true;
+      { const w = g.specials.botWants(b, dt, b.hunger > 1 ? 1.5 : 0.5); if (w) b.control.special = w; }
     }
   }
   autopilot(dt, t) {
@@ -310,7 +333,7 @@ export class RumbleMode extends Mode {
     if (!p._apT || p._apT < t || (p._apTarget && p._apTarget.ko)) { p._apT = t + 4; p._apTarget = this.rng.chance(0.5) ? this.rng.pick(this.bots.filter((b) => !b.ko).concat([this.bots[0]])) : (this.spots[0] || this.bots[0]); }
     const tg = p._apTarget; const spotMode = !tg.def; const d = Math.hypot(tg.x - p.x, tg.z - p.z);
     this.playerDriver().drive(tg.x, tg.z, spotMode && d < 6 ? 0.05 : 1.2, dt, t, { world: g.world, aggressive: true, turbo: true });
-    if (g.specials.botWants(p, this.trucks, dt, 1)) g.specials.use(p, this.trucks, (a, v, k, s) => this.onSpecialHit(a, v, k, s));
+    { const w = g.specials.botWants(p, dt, 1); if (w) g.specials.use(p, w); }
   }
   pickState(b, need) {
     const rng = this.rng, alive = this.trucks.filter((v) => v !== b && !v.ko);

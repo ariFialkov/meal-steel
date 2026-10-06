@@ -26,13 +26,24 @@ There is no networking. Opponents are bots whose driving is meant to look like p
 
 ## Controls
 
-- Desktop: WASD / arrows to drive, hold S while turning fast to drift, Shift for turbo (7 s recharge), Space for the truck's special move. In soccer, C switches between ball cam and car cam.
+- Desktop: WASD / arrows to drive, hold S while turning fast to drift, Shift for turbo (7 s recharge), Space (or E) for the truck's light special, Q for its heavy special. In soccer, C switches between ball cam and car cam. The HUD gauges show each key next to its meter.
 - Rumble ramps: hit them with turbo for more air.
-- Mobile: left joystick drives, right-side buttons for turbo, special and reverse; soccer has a camera button. Landscape only.
+- Mobile: left joystick drives, right-side buttons for turbo, light special, heavy special and reverse; soccer has a camera button. Landscape only.
 
 ## Trucks
 
-14 trucks, each with a food-themed special move: Bratzilla, Fryclone, Mac Attack, Burrito Bandito, Ramenator, Churricane, Hulk Hoagie, Cream Supreme, Supergyro, Eggatron, Wraptor, General Tsonami, Chief Beef and Barmaggeddon. See `src/data/trucks.js`.
+14 trucks: Bratzilla, Fryclone, Mac Attack, Burrito Bandito, Ramenator, Churricane, Hulk Hoagie, Cream Supreme, Supergyro, Eggatron, Wraptor, General Tsonami, Chief Beef and Barmaggeddon. See `src/data/trucks.js`.
+
+### Special moves
+
+Every truck has a light special (9–12 s recharge) and a heavy one (22–25 s recharge, more damage, bigger effects), from Bratzilla's grease dump and Glizzy Gun to Barmaggeddon's happy hour and bar fight. Moves animate the truck's own toppings (rigged out of the model by `src/vehicles/rig.js`): the sausage fires out of its bun, the fries launch as missiles, the burrito rolls off the roof, the cone swings round on its scoops to fire a laser, and so on.
+
+- `src/vehicles/specials/moves.js`: the 28 moves.
+- `src/vehicles/specials/system.js`: projectiles, hazards (puddles, clouds, obstacles), burning, and the bots' choice of when to fire.
+- `src/vehicles/specials/assets.js`: the props (cooks, vats, cacti, drone kit, cheese cannon, egg turret, ...).
+- `src/ui/splats.js`: windscreen splats when the player is hit.
+
+Every hit goes through the mode's `onSpecialHit`, so the rolled result always stands. In Rumble a knock-over move only flips a truck that is due to go out; anyone else tumbles and lands on their wheels, and HP floors keep them alive.
 
 ### Truck models
 

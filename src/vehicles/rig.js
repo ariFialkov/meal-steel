@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 
 /** Flatten a model (any node transforms, quantized attributes) into one float geometry in model space. */
-function bakeGeometry(root) {
+export function bakeGeometry(root) {
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const parts = [];
@@ -28,6 +28,23 @@ function bakeGeometry(root) {
     parts.push({ P, N, U, material: o.material });
   });
   return parts;
+}
+
+/**
+ * Connected pieces of a triangle soup (vertices welded by position): returns an Int32Array island id per triangle.
+ * Separate objects in a merged model (a sausage lying in its bun, fries in a bucket) come out as separate islands.
+ */
+export function islandsOf(P) {
+  const nt = P.length / 9, parent = new Int32Array(nt); for (let i = 0; i < nt; i++) parent[i] = i;
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const owner = new Map();
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+    const i = (t * 3 + k) * 3, key = `${Math.round(P[i] * 2000)},${Math.round(P[i + 1] * 2000)},${Math.round(P[i + 2] * 2000)}`;
+    const o = owner.get(key);
+    if (o === undefined) owner.set(key, t); else { const ra = find(o), rb = find(t); if (ra !== rb) parent[ra] = rb; }
+  }
+  const id = new Int32Array(nt); for (let t = 0; t < nt; t++) id[t] = find(t);
+  return id;
 }
 
 /** Find the wheels of a baked model. Returns [{ side, z, y, r, x0, x1 }] (x0 < x1). */
@@ -99,16 +116,43 @@ export function rigTruck(root, partDefs = {}) {
     return maxD < w.r * 1.1 || (maxD < w.r * 1.3 && Math.hypot(cy - w.y, cz - w.z) < w.r * 0.98);
   };
   for (let t = 0; t < inWheel.length; t++) for (let wi = 0; wi < found.length; wi++) if (triIn(t, found[wi])) { inWheel[t] = wi; break; }
-  // named moving parts (lanterns, a jaw...): body triangles whose centre lies in the part's box
-  const partNames = Object.keys(partDefs);
-  partNames.forEach((name, k) => {
-    const [x0, y0, z0, x1, y1, z1] = partDefs[name].box;
+  // named moving parts. mode 'box' (default): body triangles whose centre lies in the box (a cut, for things joined
+  // to the body); 'islands': whole separate pieces whose bounds fit in the box (optionally at least minSize big);
+  // 'each': like 'islands' but every piece becomes its own part (name0, name1...), pivoting at its base
+  const partList = []; // { name, id, pivot, bbox }
+  let isl = null;
+  for (const [name, def] of Object.entries(partDefs)) {
+    const [x0, y0, z0, x1, y1, z1] = def.box, mode = def.mode || 'box';
+    if (mode === 'box') {
+      const id = 100 + partList.length; partList.push({ name, id, pivot: def.pivot });
+      for (let t = 0; t < inWheel.length; t++) {
+        if (inWheel[t] >= 0) continue;
+        let cx = 0, cy = 0, cz = 0; for (let j = 0; j < 3; j++) { cx += P[t * 9 + j * 3] / 3; cy += P[t * 9 + j * 3 + 1] / 3; cz += P[t * 9 + j * 3 + 2] / 3; }
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1 && cz >= z0 && cz <= z1) inWheel[t] = id;
+      }
+      continue;
+    }
+    isl = isl || islandsOf(P);
+    const bounds = new Map();
     for (let t = 0; t < inWheel.length; t++) {
       if (inWheel[t] >= 0) continue;
-      let cx = 0, cy = 0, cz = 0; for (let j = 0; j < 3; j++) { cx += P[t * 9 + j * 3] / 3; cy += P[t * 9 + j * 3 + 1] / 3; cz += P[t * 9 + j * 3 + 2] / 3; }
-      if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1 && cz >= z0 && cz <= z1) inWheel[t] = 100 + k;
+      let b = bounds.get(isl[t]); if (!b) bounds.set(isl[t], b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity, []]);
+      b[6].push(t);
+      for (let j = 0; j < 3; j++) { const i = (t * 3 + j) * 3; for (let a = 0; a < 3; a++) { b[a] = Math.min(b[a], P[i + a]); b[a + 3] = Math.max(b[a + 3], P[i + a]); } }
     }
-  });
+    const tol = 0.03, min = def.minSize || [0, 0, 0], max = def.maxSize || [99, 99, 99];
+    const fits = [...bounds.values()].filter((b) => b[0] >= x0 - tol && b[1] >= y0 - tol && b[2] >= z0 - tol && b[3] <= x1 + tol && b[4] <= y1 + tol && b[5] <= z1 + tol && b[3] - b[0] >= min[0] && b[4] - b[1] >= min[1] && b[5] - b[2] >= min[2] && b[3] - b[0] <= max[0] && b[4] - b[1] <= max[1] && b[5] - b[2] <= max[2]);
+    if (mode === 'each') {
+      fits.sort((a, b) => a[2] - b[2] || a[0] - b[0]).forEach((b, k) => {
+        const id = 100 + partList.length; partList.push({ name: name + k, id, pivot: [(b[0] + b[3]) / 2, b[1], (b[2] + b[5]) / 2], bbox: b.slice(0, 6) });
+        for (const t of b[6]) inWheel[t] = id;
+      });
+    } else {
+      const id = 100 + partList.length, bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (const b of fits) { for (const t of b[6]) inWheel[t] = id; for (let a = 0; a < 3; a++) { bb[a] = Math.min(bb[a], b[a]); bb[a + 3] = Math.max(bb[a + 3], b[a + 3]); } }
+      partList.push({ name, id, pivot: def.pivot || [(bb[0] + bb[3]) / 2, bb[1], (bb[2] + bb[5]) / 2], bbox: bb });
+    }
+  }
   const build = (sel, ox = 0, oy = 0, oz = 0) => {
     const tris = []; for (let t = 0; t < inWheel.length; t++) if (sel(inWheel[t])) tris.push(t);
     const p = new Float32Array(tris.length * 9), n = N ? new Float32Array(tris.length * 9) : null, u = U ? new Float32Array(tris.length * 6) : null;
@@ -131,11 +175,13 @@ export function rigTruck(root, partDefs = {}) {
   }
   const body = new THREE.Mesh(build((v) => v < 0).g, material); body.castShadow = true; body.receiveShadow = true;
   const partsOut = {};
-  partNames.forEach((name, k) => {
-    const [px, py, pz] = partDefs[name].pivot, { g, count } = build((v) => v === 100 + k, px, py, pz);
-    if (!count) return;
+  for (const pd of partList) {
+    const [px, py, pz] = pd.pivot, { g, count } = build((v) => v === pd.id, px, py, pz);
+    if (!count) continue;
     const mesh = new THREE.Mesh(g, material); mesh.castShadow = true;
-    const pivot = new THREE.Group(); pivot.position.set(px, py, pz); pivot.add(mesh); partsOut[name] = { pivot, mesh };
-  });
+    const pivot = new THREE.Group(); pivot.position.set(px, py, pz); pivot.add(mesh);
+    pivot.userData.bbox = pd.bbox || null; pivot.userData.rest = [px, py, pz];
+    partsOut[pd.name] = { pivot, mesh };
+  }
   return { body, wheels, parts: partsOut };
 }

@@ -1,10 +1,10 @@
-// Unified input: keyboard (WASD/arrows, Shift turbo, Space special) + touch (joystick + buttons).
+// Unified input: keyboard (WASD/arrows, Shift turbo, Space/E light special, Q heavy special, C camera) + touch.
 export class Input {
   constructor() {
     this.keys = new Set();
     this.steer = 0; this.throttle = 0; this.brake = false;
     this.turboPressed = false; this.specialPressed = false;
-    this._turboQueued = false; this._specialQueued = false; this._camQueued = false; this.camPressed = false;
+    this._turboQueued = false; this._specialQueued = false; this._heavyQueued = false; this._camQueued = false; this.camPressed = false; this.heavyPressed = false;
     this.joy = { active: false, id: null, cx: 0, cy: 0, x: 0, y: 0 };
     this.touchButtons = { brake: false };
     this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -15,7 +15,8 @@ export class Input {
       this.keys.add(e.code);
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this._turboQueued = true;
       if (e.code === 'Space' || e.code === 'KeyE') this._specialQueued = true;
-      if (e.code === 'KeyC' || e.code === 'KeyQ') this._camQueued = true;
+      if (e.code === 'KeyQ') this._heavyQueued = true;
+      if (e.code === 'KeyC') this._camQueued = true;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       this.onAnyInput?.();
     });
@@ -33,7 +34,7 @@ export class Input {
     el.addEventListener('mousedown', fire);
   }
 
-  bindTouch(joyEl, stickEl, btnTurbo, btnSpecial, btnBrake) {
+  bindTouch(joyEl, stickEl, btnTurbo, btnSpecial, btnBrake, btnHeavy) {
     if (this.isTouch) document.body.classList.add('touch');
     const zone = joyEl;
     const start = (e) => {
@@ -76,6 +77,7 @@ export class Input {
     };
     press(btnTurbo, (d) => { if (d) this._turboQueued = true; });
     press(btnSpecial, (d) => { if (d) this._specialQueued = true; });
+    if (btnHeavy) press(btnHeavy, (d) => { if (d) this._heavyQueued = true; });
     press(btnBrake, (d) => { this.touchButtons.brake = d; });
   }
 
@@ -99,8 +101,9 @@ export class Input {
     this.handbrake = k.has('KeyS') || k.has('ArrowDown') || this.touchButtons.brake;
     this.turboPressed = this._turboQueued; this._turboQueued = false;
     this.specialPressed = this._specialQueued; this._specialQueued = false;
+    this.heavyPressed = this._heavyQueued; this._heavyQueued = false;
     this.camPressed = this._camQueued; this._camQueued = false;
-    if (!this.enabled) { this.steer = 0; this.throttle = 0; this.brake = false; this.turboPressed = false; this.specialPressed = false; }
+    if (!this.enabled) { this.steer = 0; this.throttle = 0; this.brake = false; this.turboPressed = false; this.specialPressed = false; this.heavyPressed = false; }
     return this;
   }
 }

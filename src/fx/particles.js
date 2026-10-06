@@ -1,26 +1,59 @@
 // One InstancedMesh of small puffs handles confetti, sparks, smoke puffs, coins pickups, splashes.
 import * as THREE from 'three';
 
-const MAX = 900;
+const MAX_DEFAULT = 900;
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
+const _qz = new THREE.Quaternion(), _z = new THREE.Vector3(0, 0, 1);
+
+/** a lumpy round puff: a soft radial falloff with a few overlapping lobes, so a cloud doesn't read as discs */
+let PUFF = null;
+function puffTexture() {
+  if (PUFF) return PUFF;
+  const n = 64, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d');
+  const lobe = (x, y, r, a) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(0.55, `rgba(255,255,255,${a * 0.55})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); };
+  lobe(32, 32, 30, 0.85); lobe(22, 26, 16, 0.5); lobe(42, 28, 15, 0.45); lobe(30, 42, 15, 0.45);
+  PUFF = new THREE.CanvasTexture(c); PUFF.colorSpace = THREE.SRGBColorSpace;
+  return PUFF;
+}
 
 export class Particles {
-  constructor(scene) {
+  /**
+   * opts.additive: glowing particles (fire, lasers, flashes) drawn with additive blending, unlit.
+   * opts.soft: billboarded puffs with a soft round edge that thin out as they age (clouds of smoke, frost, sugar, dust);
+   * update() then wants the camera.
+   */
+  constructor(scene, opts = {}) {
+    const MAX = this.max = opts.max || MAX_DEFAULT;
+    this.soft = !!opts.soft;
     // rounded low-poly puff (reads as smoke, sparks or confetti once scaled; boxes looked like rubble)
-    const geo = new THREE.IcosahedronGeometry(0.62, 1);
-    this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: false }), MAX);
+    const geo = this.soft ? new THREE.PlaneGeometry(1.5, 1.5) : new THREE.IcosahedronGeometry(0.62, 1);
+    let material;
+    if (opts.additive) material = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    else if (this.soft) {
+      material = new THREE.MeshLambertMaterial({ map: puffTexture(), transparent: true, depthWrite: false });
+      // per-particle opacity, so a cloud thins out instead of shrinking
+      this.alpha = new THREE.InstancedBufferAttribute(new Float32Array(MAX), 1); this.alpha.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('instanceAlpha', this.alpha);
+      material.onBeforeCompile = (sh) => {
+        sh.vertexShader = 'attribute float instanceAlpha;\nvarying float vAlpha;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlpha = instanceAlpha;');
+        sh.fragmentShader = 'varying float vAlpha;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.a *= vAlpha;');
+      };
+    } else material = new THREE.MeshLambertMaterial({ vertexColors: false });
+    this.mesh = new THREE.InstancedMesh(geo, material, MAX);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);
     this.mesh.frustumCulled = false; this.mesh.castShadow = false;
     this.mesh.count = 0; // nothing alive yet (otherwise every instance draws at the origin until the first update)
     scene.add(this.mesh);
     this.ps = []; for (let i = 0; i < MAX; i++) this.ps.push({ alive: false });
+    if (opts.additive) this.mesh.renderOrder = 5;
+    if (this.soft) this.mesh.renderOrder = 4;
     this.cursor = 0;
   }
   emit(n, fn) {
     for (let k = 0; k < n; k++) {
-      const p = this.ps[this.cursor]; this.cursor = (this.cursor + 1) % MAX;
-      p.alive = true; p.age = 0; p.life = 1; p.x = 0; p.y = 0; p.z = 0; p.vx = 0; p.vy = 0; p.vz = 0; p.size = 0.3; p.grow = 0; p.g = 20; p.drag = 0; p.rot = Math.random() * 6; p.spin = 0; p.color = 0xffffff; p.flat = false;
+      const p = this.ps[this.cursor]; this.cursor = (this.cursor + 1) % this.max;
+      p.alive = true; p.age = 0; p.life = 1; p.x = 0; p.y = 0; p.z = 0; p.vx = 0; p.vy = 0; p.vz = 0; p.size = 0.3; p.grow = 0; p.g = 20; p.drag = 0; p.rot = Math.random() * 6; p.spin = 0; p.color = 0xffffff; p.flat = false; p.alpha = 0.85;
       fn(p, k);
     }
   }
@@ -43,9 +76,10 @@ export class Particles {
   ring(x, y, z, color, radius = 8, n = 40) {
     this.emit(n, (p, k) => { const a = (k / n) * 6.28; p.x = x + Math.cos(a) * 1.5; p.y = y; p.z = z + Math.sin(a) * 1.5; p.vx = Math.cos(a) * radius * 1.5; p.vz = Math.sin(a) * radius * 1.5; p.vy = 1; p.g = 0; p.drag = 2.5; p.size = 0.5; p.life = 0.7; p.color = color; });
   }
-  update(dt) {
+  update(dt, camera) {
     let count = 0;
-    for (let i = 0; i < MAX; i++) {
+    const face = this.soft && camera ? camera.quaternion : null;
+    for (let i = 0; i < this.max; i++) {
       const p = this.ps[i];
       if (!p.alive) continue;
       p.age += dt;
@@ -55,10 +89,20 @@ export class Particles {
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < 0.05 && p.g > 0) { p.y = 0.05; p.vy *= -0.3; p.vx *= 0.7; p.vz *= 0.7; }
       p.rot += p.spin * dt;
-      const t = p.age / p.life, fade = t > 0.7 ? (1 - t) / 0.3 : 1;
-      const s = (p.size + p.grow * p.age) * fade;
-      _p.set(p.x, p.y, p.z); _e.set(p.rot, p.rot * 0.7, p.rot * 0.3); _q.setFromEuler(_e);
-      _s.set(s, p.flat ? s * 0.15 : s, s);
+      const t = p.age / p.life;
+      if (this.soft) {
+        // fade in quickly, thin out over the back half of its life; spin only about the view axis
+        const a = Math.min(1, t / 0.12) * (t > 0.45 ? Math.max(0, (1 - t) / 0.55) : 1) * (p.alpha ?? 0.85);
+        this.alpha.setX(count, a);
+        const s = p.size + p.grow * p.age;
+        _p.set(p.x, Math.max(p.y, s * 0.6), p.z); _q.copy(face || _q.identity()); // kept clear of the ground so it never cuts a puff off hard _q.multiply(_qz.setFromAxisAngle(_z, p.rot * 0.3));
+        _s.set(s, s, s);
+      } else {
+        const fade = t > 0.7 ? (1 - t) / 0.3 : 1;
+        const s = (p.size + p.grow * p.age) * fade;
+        _p.set(p.x, p.y, p.z); _e.set(p.rot, p.rot * 0.7, p.rot * 0.3); _q.setFromEuler(_e);
+        _s.set(s, p.flat ? s * 0.15 : s, s);
+      }
       _m.compose(_p, _q, _s);
       this.mesh.setMatrixAt(count, _m);
       _c.set(p.color); this.mesh.setColorAt(count, _c);
@@ -67,5 +111,6 @@ export class Particles {
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (this.alpha) this.alpha.needsUpdate = true;
   }
 }

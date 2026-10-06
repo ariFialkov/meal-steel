@@ -159,7 +159,7 @@ export class RaceMode extends Mode {
       this.driveLane(b, drv, tx, tz, speedFactor, dt, plan.clear > 25 && err > -6 && this.turnCap(b) > 1);
       // hidden brake: a behind-slated truck is held short of the line until the player is across
       if (!ahead && !this.playerFinished && b.trackS > track.finishS - 14) { const k = Math.exp((b.trackS > track.finishS - 5 ? -25 : -6) * dt); b.vx *= k; b.vz *= k; }
-      if (plan.clear > 12 && g.specials.botWants(b, this.trucks, dt, 0.8)) b.control.special = true;
+      if (plan.clear > 12) { const w = g.specials.botWants(b, dt, 0.6); if (w) b.control.special = w; }
       b.kinematicStep = null;
       b.maxSpeed = b._baseMax * b.boostMul; b.turnRate = b._baseTurn * b.boostMul; b.accel = b._baseAccel * b.boostMul;
       this.safetyNet(b, ahead, frac, speedFactor);
@@ -368,7 +368,7 @@ export class RaceMode extends Mode {
     this.rails(p, dt);
     this.unstick(p, this.playerDriver(), t);
     this.driveLane(p, this.playerDriver(), tx, tz, sf, dt, plan.clear > 25 && this.turnCap(p) > 1);
-    if (g.specials.botWants(p, this.trucks, dt, 1)) g.specials.use(p, this.trucks, (a, v, k, s) => this.onSpecialHit(a, v, k, s));
+    { const w = g.specials.botWants(p, dt, 1); if (w) g.specials.use(p, w); }
   }
   cruiseAfterFinish(b, dt, t) {
     b.kinematicStep = null;

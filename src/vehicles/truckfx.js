@@ -3,7 +3,7 @@
 //
 //  ramenator   steaming noodle bowl, lanterns that swing with the driving
 //  tsonami     swinging lanterns, the dragon breathes fire while boosting
-//  fryclone    the fries slowly turn
+//  fryclone    every fry jiggles in its bucket as the truck drives
 //  wraptor     the dinosaur jaw snaps shut now and then
 //  beef        the bull skull snorts steam
 //  cream       the megaphone blares (pulses)
@@ -16,7 +16,10 @@ import { RNG } from '../core/rng.js';
 
 const LANTERN = (x, pivotX, z, y0, y1, py) => ({ box: [Math.min(x[0], x[1]), y0, z[0], Math.max(x[0], x[1]), y1, z[1]], pivot: [pivotX, py, (z[0] + z[1]) / 2] });
 
-/** Parts split out of each model: name -> { box (model-space AABB of the triangles), pivot }. */
+/**
+ * Parts split out of each model (see rig.js): name -> { box (model-space AABB), pivot, mode }. 'islands' parts are
+ * whole separate pieces of the model (a sausage in its bun); 'each' makes one part per piece (every fry).
+ */
 export const TRUCK_PARTS = {
   tsonami: {
     lanternL: LANTERN([0.45, 1.2], 0.82, [-2.9, -2.25], 0.95, 1.76, 1.78),
@@ -25,10 +28,24 @@ export const TRUCK_PARTS = {
   ramenator: {
     lanternL: LANTERN([0.7, 1.35], 1.03, [-2.8, -2.15], 1.0, 1.95, 1.98),
     lanternR: LANTERN([-1.35, -0.7], -0.97, [-2.8, -2.15], 1.0, 1.95, 1.98),
+    bowl: { mode: 'islands', box: [-1.2, 2.25, -1.4, 1.2, 4.7, 1.3], pivot: [0, 2.3, -0.05] },
   },
-  fryclone: { fries: { box: [-1.0, 2.88, -1.95, 1.0, 4.4, 1.15], pivot: [0, 2.9, -0.45] } },
-  wraptor: { jaw: { box: [-0.7, 2.0, 1.25, 0.7, 2.42, 2.4], pivot: [0, 2.32, 1.27] } },
-  cream: { megaphone: { box: [-0.5, 2.45, 1.7, 0.5, 3.2, 2.6], pivot: [0, 2.72, 1.95] } },
+  bratzilla: { sausage: { mode: 'islands', box: [-0.45, 2.55, -2.45, 0.45, 3.7, 2.45] } },
+  fryclone: { fry: { mode: 'each', box: [-0.95, 1.7, -2.0, 0.95, 4.6, 1.1], minSize: [0, 1.0, 0], maxSize: [0.75, 9, 1.4] } },
+  macattack: { mac: { mode: 'islands', box: [-0.95, 2.25, -2.0, 0.95, 3.9, 1.7] } },
+  burrito: { burrito: { mode: 'islands', box: [-0.85, 1.85, -2.0, 0.9, 3.15, 1.7], minSize: [0.6, 0, 0], pivot: [0, 2.55, -0.15] } },
+  churricane: { churros: { mode: 'islands', box: [-0.65, 2.2, -2.6, 0.65, 3.25, 2.2], pivot: [0, 2.45, -2.45] } },
+  hoagie: { sandwich: { mode: 'islands', box: [-0.9, 2.15, -2.35, 0.9, 3.6, 1.75], pivot: [0, 2.2, -0.3] } },
+  gyro: { gyro: { mode: 'islands', box: [-0.85, 2.05, -1.9, 0.85, 3.5, 1.4] } },
+  wraptor: {
+    jaw: { box: [-0.7, 2.0, 1.25, 0.7, 2.42, 2.4], pivot: [0, 2.32, 1.27] },
+    head: { box: [-0.95, 2.45, 0.95, 0.95, 3.55, 2.65], pivot: [0, 2.45, 1.0] },
+  },
+  cream: {
+    megaphone: { mode: 'islands', box: [-0.5, 2.2, 1.6, 0.5, 3.2, 2.6], pivot: [0, 2.72, 1.95] },
+    cone: { mode: 'islands', box: [-0.6, 2.0, -2.9, 0.65, 3.4, -0.15], pivot: [0.05, 2.85, -0.3] },
+    scoops: { mode: 'islands', box: [-0.85, 2.0, -1.1, 0.9, 3.95, 1.55], pivot: [0, 2.3, 0] },
+  },
 };
 
 /** Effect anchors (model space). */
@@ -115,6 +132,8 @@ export class TruckFx {
     const ud = mesh.userData; this.body = ud.body; this.parts = ud.parts || {};
     this.rng = new RNG((id.length * 7919 + (truck?.id ?? 0) * 104729) >>> 0);
     this.pend = ['lanternL', 'lanternR'].filter((n) => this.parts[n]).map((n) => new Pendulum(this.parts[n]));
+    // fries: one little spring per fry, each a bit different
+    this.fries = Object.keys(this.parts).filter((n) => /^fry\d+$/.test(n)).map((n, i) => ({ p: this.parts[n], ax: 0, vx: 0, az: 0, vz: 0, k: 70 + (i * 37) % 50, ph: i * 1.7 }));
     this.stacks = STACKS[id] || null;
     this.crowd = id === 'barmaggeddon' ? new BarCrowd(this.body, this.rng) : null;
     this.jawT = 3; this.jawPhase = -1; this.snortT = 3; this.snort = 0; this.steamT = 0; this.puff = 0; this.wasBraking = false; this.wasStopped = true;
@@ -122,15 +141,27 @@ export class TruckFx {
   }
   /** world position of a model-space point on the (sprung) body */
   world(p) { return this.body.localToWorld(_v.set(p[0], p[1], p[2])); }
-  update(dt, t, fx, near) {
+  /** fx: the game's particles; soft (optional): translucent billboard puffs for steam and smoke */
+  update(dt, t, fx, near, soft = null) {
+    const puffs = soft || fx;
     const tr = this.truck || {}, c = tr.control || {}, S = tr.susp || { acc: 0, hv: 0 };
     const speed = tr.speed || 0, fwd = tr.fwdSpeed || 0;
     if (near && fx) this.body.updateWorldMatrix(true, false);
     // swinging lanterns
     const accL = (tr.angVel || 0) * fwd;
     for (const p of this.pend) p.update(dt, S.acc || 0, accL, (S.hv || 0) * 2);
-    // fries turn slowly
-    if (this.parts.fries) this.parts.fries.rotation.y += dt * 0.55;
+    // fries jiggle in the bucket (only those sitting in it: not one flying off as a missile or growing back)
+    if (this.fries.length && dt > 0) {
+      const aF = S.acc || 0, bump = (S.hv || 0) * 3 + (speed > 4 ? Math.sin(t * 23) * speed * 0.004 : 0);
+      for (const f of this.fries) {
+        if (f.p.parent !== this.body || f.p.scale.x < 0.99) continue;
+        f.vx += (-f.k * f.ax - 5 * f.vx + aF * 0.035 + bump * Math.cos(f.ph)) * dt; f.ax += f.vx * dt;
+        f.vz += (-f.k * f.az - 5 * f.vz - accL * 0.03 + bump * Math.sin(f.ph)) * dt; f.az += f.vz * dt;
+        // a few centimetres at the rim at most: never through the bucket walls
+        f.ax = Math.max(-0.04, Math.min(0.04, f.ax)); f.az = Math.max(-0.04, Math.min(0.04, f.az));
+        f.p.rotation.set(f.ax, 0, f.az);
+      }
+    }
     // dinosaur jaw: snap shut, hold, ease open
     if (this.parts.jaw) {
       this.jawT -= dt;
@@ -159,7 +190,7 @@ export class TruckFx {
       if (this.steamT <= 0) {
         this.steamT = 0.07;
         const a = Math.random() * Math.PI * 2, r = Math.random() * 0.75, A = ANCHORS.ramenator.bowl, w = this.world([A[0] + Math.cos(a) * r, A[1], A[2] + Math.sin(a) * r]);
-        fx.emit(1, (q) => { q.x = w.x; q.y = w.y; q.z = w.z; q.vx = tr.vx * 0.6 || 0; q.vz = tr.vz * 0.6 || 0; q.vy = 1.0 + Math.random() * 0.8; q.g = -0.6; q.drag = 1.5; q.size = 0.1; q.grow = 0.55; q.life = 1.0; q.color = 0xffffff; q.spin = 1; });
+        puffs.emit(1, (q) => { q.alpha = 0.6; q.x = w.x; q.y = w.y; q.z = w.z; q.vx = tr.vx * 0.6 || 0; q.vz = tr.vz * 0.6 || 0; q.vy = 1.0 + Math.random() * 0.8; q.g = -0.6; q.drag = 1.5; q.size = 0.1; q.grow = 0.55; q.life = 1.0; q.color = 0xffffff; q.spin = 1; });
       }
     }
     // dragon fire while boosting
@@ -181,7 +212,7 @@ export class TruckFx {
         const f = _d.set(0, -0.35, 1).normalize().transformDirection(this.body.matrixWorld);
         for (const n of ANCHORS.beef.nostrils) {
           const w = this.world(n);
-          fx.emit(1, (q) => { q.x = w.x; q.y = w.y; q.z = w.z; q.vx = f.x * 4 + (tr.vx || 0) * 0.8; q.vy = f.y * 4 + 0.6; q.vz = f.z * 4 + (tr.vz || 0) * 0.8; q.g = -0.5; q.drag = 3; q.size = 0.14; q.grow = 0.9; q.life = 0.55; q.color = 0xf6f6f6; q.spin = 2; });
+          puffs.emit(1, (q) => { q.alpha = 0.7; q.x = w.x; q.y = w.y; q.z = w.z; q.vx = f.x * 4 + (tr.vx || 0) * 0.8; q.vy = f.y * 4 + 0.6; q.vz = f.z * 4 + (tr.vz || 0) * 0.8; q.g = -0.5; q.drag = 3; q.size = 0.14; q.grow = 0.9; q.life = 0.55; q.color = 0xf6f6f6; q.spin = 2; });
         }
       }
     }
@@ -196,7 +227,7 @@ export class TruckFx {
         for (const sPos of this.stacks) {
           if (Math.random() < 0.55) continue;
           const w = this.world(sPos);
-          fx.emit(1, (q) => { q.x = w.x; q.y = w.y + 0.1; q.z = w.z; q.vx = (tr.vx || 0) * 0.5 + (Math.random() - 0.5); q.vz = (tr.vz || 0) * 0.5 + (Math.random() - 0.5); q.vy = 3 + Math.random() * 2; q.g = -0.4; q.drag = 2; q.size = 0.22; q.grow = 1.4; q.life = 0.9; q.color = 0xeeeeee; q.spin = 1.5; });
+          puffs.emit(1, (q) => { q.alpha = 0.7; q.x = w.x; q.y = w.y + 0.1; q.z = w.z; q.vx = (tr.vx || 0) * 0.5 + (Math.random() - 0.5); q.vz = (tr.vz || 0) * 0.5 + (Math.random() - 0.5); q.vy = 3 + Math.random() * 2; q.g = -0.4; q.drag = 2; q.size = 0.22; q.grow = 1.4; q.life = 0.9; q.color = 0xeeeeee; q.spin = 1.5; });
         }
       }
     }

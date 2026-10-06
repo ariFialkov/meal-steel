@@ -33,7 +33,10 @@
         <div class="truck-food" id="truckFood">brats &amp; hot dogs</div>
       </div>
       <div class="truck-stats" id="truckStats"></div>
-      <div class="truck-special"><div class="sticker-hdr">SPECIAL MOVE</div><span class="sp-ico" id="specialIconMenu"></span><b id="specialName">Sausage Whip</b><span id="specialDesc"></span></div>
+      <div class="truck-special"><div class="sticker-hdr">SPECIAL MOVES</div>
+        <div class="sp-row"><span class="sp-ico" id="specialIconMenu"></span><div class="sp-txt"><div class="sp-name"><i class="tag light">LIGHT</i><b id="specialName"></b><kbd>SPACE</kbd></div><span id="specialDesc"></span></div></div>
+        <div class="sp-row"><span class="sp-ico heavy" id="heavyIconMenu"></span><div class="sp-txt"><div class="sp-name"><i class="tag heavy">HEAVY</i><b id="heavyName"></b><kbd>Q</kbd></div><span id="heavyDesc"></span></div></div>
+      </div>
 
       <footer class="menu-bottom">
         <div class="modes" id="modes">
@@ -48,7 +51,7 @@
           <button class="btn play" id="playBtn">PLAY</button>
         </div>
       </footer>
-      <div class="hint" id="menuHint">WASD / arrows drive · SHIFT turbo · SPACE special · tap &amp; drag on mobile</div>
+      <div class="hint" id="menuHint"><kbd>WASD</kbd> drive · <kbd>SHIFT</kbd> turbo · <kbd>SPACE</kbd> light move · <kbd>Q</kbd> heavy move · tap &amp; drag on mobile</div>
     </section>
 
     <!-- PREGAME ROLLER -->
@@ -76,13 +79,15 @@
         <div class="joystick" id="joystick"><div class="stick" id="stick"></div></div>
         <div class="gauges">
           <div class="gauge hp-gauge hidden" id="hpGauge"><label>HEALTH</label><div class="bar"><div id="hpBar"></div></div></div>
-          <div class="gauge"><label>TURBO</label><div class="bar"><div id="turboBar"></div></div></div>
-          <div class="gauge"><label id="specialLabel">SPECIAL</label><div class="bar"><div id="specialBar"></div></div></div>
+          <div class="gauge"><label><span class="gico" data-icon="flame"></span>TURBO <kbd>SHIFT</kbd></label><div class="bar"><div id="turboBar"></div></div></div>
+          <div class="gauge sp"><label><span class="gico" id="lightIcon"></span><b id="specialLabel">LIGHT</b> <kbd>SPACE</kbd></label><div class="bar"><div id="specialBar"></div></div></div>
+          <div class="gauge sp heavy"><label><span class="gico" id="heavyIcon"></span><b id="heavyLabel">HEAVY</b> <kbd>Q</kbd></label><div class="bar"><div id="heavyBar"></div></div></div>
           <div class="speed" id="speed">0</div>
         </div>
         <div class="actions">
           <button class="act" id="btnTurbo"><span data-icon="flame"></span><small>TURBO</small></button>
-          <button class="act" id="btnSpecial"><span id="specialIcon"></span><small>SPECIAL</small></button>
+          <button class="act" id="btnSpecial"><span id="specialIcon"></span><small>LIGHT</small></button>
+          <button class="act heavy-act" id="btnHeavy"><span id="heavyIconBtn"></span><small>HEAVY</small></button>
           <button class="act small-act" id="btnBrake"><span data-icon="reverse"></span><small>REV</small></button>
         </div>
       </div>

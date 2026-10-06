@@ -11,7 +11,13 @@ export class Mode {
   setup() {}
   update(dt, t) { this.elapsed += dt; }
   onTruckHit(a, b, info) {}
-  onSpecialHit(att, victim, kind, strength) {}
+  /**
+   * A special move hit a truck. opts: { dmg, knock, award, label, dir }. Modes without health just let a knock roll the
+   * truck over (it lands back on its wheels); Rumble overrides this to apply damage under its knockout rules.
+   */
+  onSpecialHit(att, victim, kind, strength, opts = {}) {
+    if (opts.knock && !victim.shielded) { victim.tumble(Math.random() < 0.5 ? -1 : 1, false); victim.impulse(0, 0, 6 * victim.mass); }
+  }
   onPropHit(truck, prop, how, strength) {}
   hud() {}
   drawMinimap(ctx, size) {}

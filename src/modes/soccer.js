@@ -275,7 +275,7 @@ export class SoccerMode extends Mode {
         }
         tr.aimX = aim.x; tr.aimZ = aim.z;
         drv.drive(tx, tz, sf, dt, t, { world: null, avoidTrucks: aggressive ? null : this.trucks, aggressive, turbo: aggressive });
-        if (g.specials.botWants(tr, this.trucks, dt, 0.5)) tr.control.special = true;
+        { const w = g.specials.botWants(tr, dt, 0.5); if (w) tr.control.special = w; }
       }
     }
   }

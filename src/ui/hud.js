@@ -1,5 +1,6 @@
 // In-game HUD: leaderboard, timer, minimap, gauges, announcements, touch controls.
 import { icon, mountIcons } from './icons.js';
+import { Splats } from './splats.js';
 export class Hud {
   constructor(input, onQuit) {
     const $ = (id) => document.getElementById(id);
@@ -7,11 +8,13 @@ export class Hud {
     this.minimap = $('minimap'); this.ctx = this.minimap.getContext('2d');
     this.turboBar = $('turboBar'); this.specialBar = $('specialBar'); this.speed = $('speed'); this.specialLabel = $('specialLabel'); this.specialIcon = $('specialIcon');
     this.announceEl = $('announce'); this.toasts = $('toasts');
-    this.btnTurbo = $('btnTurbo'); this.btnSpecial = $('btnSpecial');
+    this.btnTurbo = $('btnTurbo'); this.btnSpecial = $('btnSpecial'); this.btnHeavy = $('btnHeavy');
+    this.heavyBar = $('heavyBar'); this.heavyLabel = $('heavyLabel'); this.lightIcon = $('lightIcon'); this.heavyIcon = $('heavyIcon'); this.heavyIconBtn = $('heavyIconBtn');
+    this.splats = new Splats(this.el);
     this.hpGauge = $('hpGauge'); this.hpBar = $('hpBar');
     this.statusBadge = $('statusBadge'); this.statusText = $('statusText'); this.statusFill = $('statusFill'); this.statusKey = '';
     mountIcons(this.el);
-    input.bindTouch($('joystick'), $('stick'), this.btnTurbo, this.btnSpecial, $('btnBrake'));
+    input.bindTouch($('joystick'), $('stick'), this.btnTurbo, this.btnSpecial, $('btnBrake'), this.btnHeavy);
     this.camBtn = $('camBtn'); this.camLabel = $('camLabel'); input.bindCamButton(this.camBtn);
     $('quitBtn').addEventListener('click', () => onQuit());
     this.boardT = 0; this.mapT = 0; this.announceTimer = null;
@@ -19,12 +22,18 @@ export class Hud {
   }
   show(game) {
     this.el.classList.remove('hidden'); this.toasts.innerHTML = ''; this.announceEl.className = 'announce';
-    this.specialLabel.textContent = game.player.def.special.name.toUpperCase(); this.specialIcon.innerHTML = icon(game.player.def.special.icon);
+    const d = game.player.def;
+    this.specialLabel.textContent = d.light.name.toUpperCase(); this.heavyLabel.textContent = d.heavy.name.toUpperCase();
+    this.specialIcon.innerHTML = icon(d.light.icon); this.heavyIconBtn.innerHTML = icon(d.heavy.icon);
+    this.lightIcon.innerHTML = icon(d.light.icon); this.heavyIcon.innerHTML = icon(d.heavy.icon);
+    this.splats.clear();
     this.boardT = 1; this.mapT = 1;
     this.camBtn.classList.toggle('hidden', !game.mode.toggleCamera); this.setCamMode(game.mode.cameraMode);
   }
   setCamMode(m) { if (!m) return; this.camLabel.textContent = m === 'ball' ? 'BALL CAM' : 'CAR CAM'; this.camBtn.classList.toggle('car', m !== 'ball'); }
-  hide() { this.hpGauge?.classList.add('hidden'); this.camBtn?.classList.add('hidden'); this.el.classList.add('hidden'); this.announceEl.className = 'announce'; this.statusBadge.classList.add('hidden'); this.statusKey = ''; }
+  /** Something splattered over the player's windscreen (cheese, tzatziki, a tortilla...). */
+  splat(kind, amount = 1, secs = 2) { this.splats.add(kind, amount, secs); }
+  hide() { this.splats?.clear(); this.hpGauge?.classList.add('hidden'); this.camBtn?.classList.add('hidden'); this.el.classList.add('hidden'); this.announceEl.className = 'announce'; this.statusBadge.classList.add('hidden'); this.statusKey = ''; }
   announce(text, hold = false) {
     const el = this.announceEl;
     el.textContent = text; el.className = 'announce';
@@ -43,9 +52,14 @@ export class Hud {
     const p = game.player;
     this.turboBar.style.width = (p.turboTime > 0 ? 100 : (1 - p.turboCd / p.turboCdMax) * 100) + '%';
     this.turboBar.style.background = p.turboCd <= 0 ? 'var(--orange2)' : 'rgba(255,176,42,0.45)';
-    this.specialBar.style.width = (1 - p.spCd / p.spCdMax) * 100 + '%';
-    this.specialBar.style.background = p.spCd <= 0 ? 'var(--blue)' : 'rgba(58,169,255,0.45)';
-    this.btnTurbo.classList.toggle('cooling', p.turboCd > 0); this.btnSpecial.classList.toggle('cooling', p.spCd > 0);
+    const cdL = p.cd.light, cdH = p.cd.heavy;
+    this.specialBar.style.width = (1 - cdL / p.cdMax.light) * 100 + '%';
+    this.specialBar.style.background = cdL <= 0 ? 'var(--blue)' : 'rgba(58,169,255,0.45)';
+    this.heavyBar.style.width = (1 - cdH / p.cdMax.heavy) * 100 + '%';
+    this.heavyBar.style.opacity = cdH <= 0 ? 1 : 0.5;
+    this.specialBar.parentElement.parentElement.classList.toggle('ready', cdL <= 0);
+    this.heavyBar.parentElement.parentElement.classList.toggle('ready', cdH <= 0);
+    this.btnTurbo.classList.toggle('cooling', p.turboCd > 0); this.btnSpecial.classList.toggle('cooling', cdL > 0); this.btnHeavy.classList.toggle('cooling', cdH > 0);
     this.speed.textContent = Math.round(p.speed * 3.6);
     this.updateStatus(p);
     this.boardT += dt; this.mapT += dt;

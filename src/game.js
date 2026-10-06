@@ -8,7 +8,7 @@ import { buildCity } from './world/city.js';
 import { generateTrack } from './world/track.js';
 import { Truck, collideTrucks } from './vehicles/truck.js';
 import { createTruckFx } from './vehicles/truckfx.js';
-import { Specials } from './vehicles/specials.js';
+import { SpecialSystem } from './vehicles/specials/system.js';
 import { Particles } from './fx/particles.js';
 import { RaceMode } from './modes/race.js';
 import { RumbleMode } from './modes/rumble.js';
@@ -53,7 +53,7 @@ export class Game {
     if (this.track?.features.overpass) { const o = this.track.features.overpass; o.world = this.world.addOverpass(o.ax, o.az, o.bx, o.bz, 5, 6, 22); }
 
     this.fx = new Particles(scene);
-    this.specials = new Specials(scene, this.fx, this.audio, rng);
+    this.specials = new SpecialSystem(this);
 
     // trucks
     const bots = params.lineup ? params.lineup.map((id) => TRUCK_BY_ID[id]) : rng.shuffle(TRUCKS.filter((t) => t.id !== this.playerDef.id)).slice(0, params.players - 1);
@@ -104,6 +104,7 @@ export class Game {
     for (const tr of this.trucks) tr.applyRender(alpha);
     this.mode.applyRender?.(alpha);
     this.updateCamera(dt);
+    this.specials.soft.update(0, this.camera); // turn the cloud billboards to this frame's camera
     this.hud.update(this, dt);
     if (this.mode.finished) {
       this.mode.endTimer -= dt;
@@ -123,7 +124,8 @@ export class Game {
       // the physics convention, so only the player's input is converted here.
       p.control.steer = -input.steer; p.control.throttle = input.throttle; p.control.handbrake = input.handbrake;
       p.control.turbo = input.turboPressed;
-      if (input.specialPressed) this.specials.use(p, this.trucks, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s));
+      if (input.specialPressed) this.specials.use(p, 'light');
+      if (input.heavyPressed) this.specials.use(p, 'heavy');
     } else { p.control.throttle = 0; p.control.steer = 0; p.control.turbo = false; }
 
     if (input.camPressed && this.mode.toggleCamera) this.mode.toggleCamera();
@@ -132,7 +134,7 @@ export class Game {
 
     for (const tr of this.trucks) {
       if (!tr.alive) continue;
-      if (!tr.isPlayer && tr.control.special) { tr.control.special = false; this.specials.use(tr, this.trucks, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s)); }
+      if (tr.control.special) { const which = tr.control.special === true ? 'light' : tr.control.special; tr.control.special = null; this.specials.use(tr, which); }
       tr.update(dt, this.world, t);
       tr.collideProps(this.props, (prop, how, strength) => this.onPropHit(tr, prop, how, strength));
     }
@@ -152,7 +154,7 @@ export class Game {
     for (const tr of this.trucks) {
       for (const ev of tr.events) {
         if (ev.type === 'turbo') { if (tr.isPlayer || this.near(tr)) this.audio.boost(); }
-        else if (ev.type === 'wall') { this.mode.onWallHit?.(tr, ev.strength); if (ev.strength > 0.4) { this.fx.sparks(ev.x ?? tr.x, tr.y + 0.6, ev.z ?? tr.z, 8); if (tr.isPlayer) { this.audio.hit(ev.strength); this.shake(ev.strength * 0.5); } else if (this.near(tr)) this.audio.hit(ev.strength * 0.5); } }
+        else if (ev.type === 'wall') { this.mode.onWallHit?.(tr, ev.strength); this.specials.onWall(tr, ev.strength); if (ev.strength > 0.4) { this.fx.sparks(ev.x ?? tr.x, tr.y + 0.6, ev.z ?? tr.z, 8); if (tr.isPlayer) { this.audio.hit(ev.strength); this.shake(ev.strength * 0.5); } else if (this.near(tr)) this.audio.hit(ev.strength * 0.5); } }
         else if (ev.type === 'land') { this.fx.smoke(tr.x, tr.y + 0.3, tr.z, 5, 0x999999, 0.6); if (tr.isPlayer) this.audio.thud(); }
       }
       tr.events.length = 0;
@@ -162,10 +164,10 @@ export class Game {
       if (tr.fx.stun > 0 && Math.random() < 0.4) this.fx.smoke(tr.x, tr.y + 2.5, tr.z, 1, 0x444444, 0.7);
       if (tr.fx.burn > 0 && Math.random() < 0.5) this.fx.smoke(tr.x, tr.y + 1, tr.z, 1, 0xff5722, 0.4);
     }
-    this.specials.update(dt, this.trucks, t, this.world, (a, v, k, s) => this.mode.onSpecialHit(a, v, k, s));
+    this.specials.update(dt, t);
     this.props.update(dt);
     // per-truck moving parts and effects (particles only for trucks near the camera)
-    for (const tr of this.trucks) if (tr.rigFx && tr.mesh.visible) tr.rigFx.update(dt, t, this.fx, Math.hypot(tr.x - this.camera.position.x, tr.z - this.camera.position.z) < 90);
+    for (const tr of this.trucks) if (tr.rigFx && tr.mesh.visible) tr.rigFx.update(dt, t, this.fx, Math.hypot(tr.x - this.camera.position.x, tr.z - this.camera.position.z) < 90, this.specials.soft);
     this.fx.update(dt);
     if (this.rain) { const pos = this.rain.geometry.attributes.position; for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) - 40 * dt; if (y < 0) y += 40; pos.setY(i, y); } pos.needsUpdate = true; this.rain.position.set(this.camera.position.x, 0, this.camera.position.z); }
     // audio
@@ -189,6 +191,7 @@ export class Game {
     const va = a.vx * -r.nx + a.vz * -r.nz, vb = b.vx * r.nx + b.vz * r.nz;
     const att = va > vb ? a : b, vic = att === a ? b : a;
     if (s > 2) { vic.lastHitBy = att; vic.lastHitTime = now; }
+    if (s > 2) this.specials.onTruckHit(a, b, r);
     this.mode.onTruckHit(att, vic, { strength: s, time: now });
   }
   onPropHit(tr, prop, how, strength) {
